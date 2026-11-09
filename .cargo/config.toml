@@ -1,0 +1,15 @@
+# NetVigil XR — Cargo configuration
+#
+# The host machine's x86_64-pc-windows-gnu Rust toolchain uses MinGW-w64 as
+# its system linker. The bundled MinGW runtime at C:\mingw64 is incomplete:
+# it lacks crtbegin.o, crtend.o, and dllcrt2.o, and its baked-in library
+# search paths reference a non-existent buildroot directory.
+#
+# The Rust toolchain bundles a complete self-contained MinGW runtime
+# (crt2.o, libkernel32.a, etc.) under each toolchain's self-contained
+# directory. LIBRARY_PATH tells x86_64-w64-mingw32-gcc where to find these.
+
+[env]
+LIBRARY_PATH = "C:/Users/pc/.rustup/toolchains/stable-x86_64-pc-windows-gnu/lib/rustlib/x86_64-pc-windows-gnu/lib/self-contained;C:/mingw64/mingw64/lib/gcc/x86_64-w64-mingw32/16.2.0"
+C_INCLUDE_PATH = "C:/mingw64/mingw64/include"
+CPATH = "C:/mingw64/mingw64/include"

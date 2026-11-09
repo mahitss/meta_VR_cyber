@@ -1,0 +1,42 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "engine-health-request.v1.schema.json",
+  "title": "Engine Health Request",
+  "description": "Health-check request sent to the NetVigil XR security simulation engine (Rust/WASM). Contract version 1.0.",
+  "type": "object",
+  "required": ["contract_version", "request_id"],
+  "properties": {
+    "contract_version": {
+      "type": "string",
+      "description": "Must be exactly \"1.0\". The Rust engine performs authoritative validation and rejects any other value.",
+      "const": "1.0"
+    },
+    "request_id": {
+      "type": "string",
+      "description": "Non-empty ASCII identifier, maximum 256 characters. Used to correlate requests with responses.",
+      "minLength": 1,
+      "maxLength": 256,
+      "pattern": "^[\\x20-\\x7E]+$"
+    }
+  },
+  "additionalProperties": false,
+  "examples": [
+    {
+      "contract_version": "1.0",
+      "request_id": "m002-smoke-001"
+    }
+  ],
+  "versioning_rules": [
+    "The contract_version field is the authoritative version indicator.",
+    "The Rust engine rejects any contract_version it does not recognize.",
+    "New contract versions require a new schema file and a new Rust validation branch.",
+    "TypeScript adapters must not send a contract_version the Rust engine does not accept."
+  ],
+  "error_behavior": [
+    "Missing contract_version → MALFORMED_JSON error.",
+    "Unsupported contract_version → UNSUPPORTED_CONTRACT_VERSION error.",
+    "Missing or invalid request_id → INVALID_REQUEST_ID error.",
+    "Malformed JSON body → MALFORMED_JSON error.",
+    "All errors return a JSON object with { code, message } fields."
+  ]
+}

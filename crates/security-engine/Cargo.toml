@@ -1,0 +1,18 @@
+[package]
+name = "security-engine"
+description = "Deterministic security graph simulation engine for NetVigil XR"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+wasm-bindgen = { workspace = true }
+
+[dev-dependencies]
+
+[profile.release]
+opt-level = 2

@@ -1,0 +1,49 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "engine-health-response.v1.schema.json",
+  "title": "Engine Health Response",
+  "description": "Health-check response returned by the NetVigil XR security simulation engine (Rust/WASM). Contract version 1.0.",
+  "type": "object",
+  "required": ["contract_version", "request_id", "engine", "status"],
+  "properties": {
+    "contract_version": {
+      "type": "string",
+      "description": "Echo of the request contract_version. Always \"1.0\" for contract v1.0.",
+      "const": "1.0"
+    },
+    "request_id": {
+      "type": "string",
+      "description": "Echo of the request request_id.",
+      "minLength": 1
+    },
+    "engine": {
+      "type": "string",
+      "description": "Engine identifier. Always \"security-engine\".",
+      "const": "security-engine"
+    },
+    "status": {
+      "type": "string",
+      "description": "Status of the health check. \"ok\" indicates the engine is operational.",
+      "const": "ok"
+    }
+  },
+  "additionalProperties": false,
+  "examples": [
+    {
+      "contract_version": "1.0",
+      "request_id": "m002-smoke-001",
+      "engine": "security-engine",
+      "status": "ok"
+    }
+  ],
+  "versioning_rules": [
+    "The response contract_version always matches the request contract_version.",
+    "New response fields for future contract versions are additive only.",
+    "Removed fields require a new contract version."
+  ],
+  "error_behavior": [
+    "When the request is invalid, the engine returns an error object instead: { code, message }.",
+    "Error codes: MALFORMED_JSON, UNSUPPORTED_CONTRACT_VERSION, INVALID_REQUEST_ID, INTERNAL_ERROR.",
+    "The TypeScript adapter must validate the response shape and distinguish success from error responses."
+  ]
+}
