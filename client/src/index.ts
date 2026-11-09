@@ -17,3 +17,12 @@ World.create(
   world.registerSystem(RobotSystem);
   world.registerSystem(PanelSystem);
 });
+
+// Development-only WASM diagnostic. Tree-shaken out of production builds.
+if (import.meta.env.DEV) {
+  void import('./simulation/wasm-dev-diagnostic.js').then(
+    ({ runWasmDevDiagnostic }) => {
+      void runWasmDevDiagnostic();
+    },
+  );
+}

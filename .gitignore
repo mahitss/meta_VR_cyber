@@ -2,6 +2,10 @@
 target/
 Cargo.lock.orig
 
+# Local machine-specific Cargo configuration (contains absolute paths)
+# Do not commit. See README.md for the local MinGW linker workaround.
+.cargo/config.toml
+
 # Environment files
 .env
 .env.local
