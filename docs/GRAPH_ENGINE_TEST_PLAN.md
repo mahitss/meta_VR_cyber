@@ -1,10 +1,10 @@
 # NetVigil XR — Graph Engine Test Plan
 
-**Document version:** 1.0  
-**Status:** Specification — M003.0  
+**Document version:** 1.1  
+**Status:** Specification — M003.0.1  
 **Scope:** `security-engine` Rust/WASM crate  
 **Implementation status:** Not implemented. This document is a specification only.  
-**Implementation prohibited in M003.0.**
+**Implementation prohibited in M003.0.1.**
 
 ## 1. Purpose
 
@@ -14,10 +14,10 @@ to be implemented as table-driven native Rust tests initially, with no new testi
 
 ## 2. Verification Distinctions
 
-| Verification type | Execution environment | Scope | Status in M003.0 |
-|-------------------|----------------------|-------|------------------|
+| Verification type | Execution environment | Scope | Status in M003.0.1 |
+|-------------------|----------------------|-------|--------------------|
 | Native Rust tests | Host machine (cargo test) | Pure graph logic, validation, determinism | Specified only, not implemented |
-| WASM boundary tests | Node.js or browser (wasm-bindgen) | Raw `simulate_graph_json` entry point via wasm-bindgen | Specified only |
+| WASM boundary tests | Node.js (wasm-bindgen) | Raw `simulate_graph_json` entry point via wasm-bindgen | Specified only |
 | Browser WASM tests | Physical browser / IWER | End-to-end invocation through generated bindings | Not attempted (blocked in M002 by IWSDK runtime owner error on Windows) |
 | Quest headset tests | Physical Meta Quest hardware | Performance (60 FPS target), immersive interaction | Outstanding (no headset available) |
 
@@ -28,7 +28,7 @@ Browser verification is not claimed. Quest headset validation is outstanding.
 | Test ID | Precondition | Input summary | Expected result | Error code |
 |---------|-------------|---------------|-----------------|------------|
 | NET-001 | Empty graph | No assets, no edges, no sources | `reachable_asset_ids: []`, `unreachable_asset_ids: []`, `witnesses: []` | — |
-| NET-002 | Single available asset | One asset `A: available`, no edges, source `[A]` | `reachable: ["A"]`, `unreachable: []`, `witnesses: [{target: A, source: A, asset_path: [A], edge_path: []}]` | — |
+| NET-002 | Single asset | One asset `A: available`, no edges, source `[A]` | `reachable: ["A"]`, `unreachable: []`, `witnesses: [{target: A, source: A, asset_path: [A], edge_path: []}]` | — |
 | NET-003 | Direct connection | Assets `A, B` both available; edge `A→B` enabled; source `[A]` | `reachable: ["A","B"]`, `unreachable: []`, witness for B: path `[A,B]` | — |
 | NET-004 | Multi-hop connection | Assets `A,B,C` available; edges `A→B`, `B→C` enabled; source `[A]` | `reachable: ["A","B","C"]`; witness for C: asset_path `[A,B,C]`, edge_path `[e1,e2]` | — |
 | NET-005 | Directed edge behavior | Assets `A,B` available; edge `A→B` enabled only; source `[B]` | `reachable: ["B"]`, `unreachable: ["A"]`; no witness for A | — |
@@ -41,7 +41,9 @@ Browser verification is not claimed. Quest headset validation is outstanding.
 | NET-012 | Empty attack-source list | Assets `A,B` available; edge `A→B`; sources `[]` | `reachable: []`, `unreachable: ["A","B"]`, `witnesses: []` | — |
 | NET-013 | Deterministic shortest path | Assets `A,B,C,D` available; edges `A→B`, `B→C`, `A→C`, `C→D`; source `[A]` | Witness for C: path `[A,C]` (shorter than `[A,B,C]`) | — |
 | NET-014 | Equal-length path tie-breaking | Assets `A,B,C,D` available; edges `A→B`, `A→D`, `B→C`, `D→C`; source `[A]` | Witness for C uses path via B (B < D lexicographically) | — |
-| NET-015 | Parallel input relationship handling | Same graph, edges array permuted | Identical canonical output regardless of input order | — |
+| NET-015 | Tie-breaking with multiple attack sources | Assets `A,B,C,X,Y` available; edges `X→B`, `Y→D`, `B→C`, `D→C`; sources `[X, Y]` | Witness for C: source X wins (X < Y), path `[X,B,C]` | — |
+| NET-016 | Duplicate directed relationship | Assets `A, B` available; edges `A→B` (id=e1) and `A→B` (id=e2) | `DUPLICATE_NETWORK_RELATIONSHIP` | `DUPLICATE_NETWORK_RELATIONSHIP` |
+| NET-017 | Input permutation determinism | Same graph, edges array permuted | Identical canonical output regardless of input order | — |
 
 ## 4. Test Matrix — Service Dependency Propagation
 
@@ -50,12 +52,14 @@ Browser verification is not claimed. Quest headset validation is outstanding.
 | DEP-001 | No dependencies | Assets `A, B` available; no dependencies | `initially_unavailable: []`, `impacted: []`, `unavailable: []` | — |
 | DEP-002 | Direct dependency failure | Assets `App, DB` where `DB: unavailable`; dependency `App → DB` | `initially_unavailable: ["DB"]`, `impacted: ["App"]`, `unavailable: ["App","DB"]` | — |
 | DEP-003 | Multi-level cascading impact | Assets `A, B, C` where `C: unavailable`; deps `A → B`, `B → C` | `initially_unavailable: ["C"]`, `impacted: ["A","B"]`, `unavailable: ["A","B","C"]` | — |
-| DEP-004 | Multiple required dependencies (AND) | Assets `App, DB, Cache` where `DB: unavailable`, `Cache: available`; deps `App → DB`, `App → Cache` | `impacted: ["App"]` (AND: one unavailable dep is enough to impact) | — |
+| DEP-004 | One unavailable required dependency (OR semantics) | Assets `App, DB, Cache` where `DB: unavailable`, `Cache: available`; deps `App → DB`, `App → Cache` | `initially_unavailable: ["DB"]`, `impacted: ["App"]`, `unavailable: ["App","DB"]` | — |
 | DEP-005 | Unrelated asset unaffected | Assets `A, B, C` where `A: unavailable`; dep `B → C` | `impacted: []`; B and C unaffected by A | — |
 | DEP-006 | Initially unavailable asset | Assets `A, B` where `A: unavailable`; dep `B → A` | `initially_unavailable: ["A"]`, `impacted: ["B"]`, `unavailable: ["A","B"]` | — |
-| DEP-007 | Dependency cycle termination | Assets `A, B` where `A: unavailable`; deps `A → B`, `B → A` | `initially_unavailable: ["A"]`, `impacted: ["B"]`, terminates (visited set) | — |
-| DEP-008 | Impact excludes initial seeds | Assets `A, B` where `A: unavailable`; dep `B → A` | `impacted_dependent_asset_ids: ["B"]` (does not include `A`) | — |
-| DEP-009 | AND semantics: all deps must be unavailable | Assets `App, DB1, DB2` where `DB1: unavailable`, `DB2: available`; deps `App → DB1`, `App → DB2` | `impacted: ["App"]` (any unavailable required dep impacts App) | — |
+| DEP-007 | Dependency cycle, no initially unavailable | Assets `A, B` both available; deps `A → B`, `B → A` | `initially_unavailable: []`, `impacted: []`, `unavailable: []` | — |
+| DEP-008 | Dependency cycle with unavailable | Assets `A, B` where `A: unavailable`; deps `A → B`, `B → A` | `initially_unavailable: ["A"]`, `impacted: ["B"]`, terminates (visited set) | — |
+| DEP-009 | Duplicate service dependency pair | Assets `A, B` available; deps `A → B` (id=d1) and `A → B` (id=d2) | `DUPLICATE_SERVICE_RELATIONSHIP` | `DUPLICATE_SERVICE_RELATIONSHIP` |
+| DEP-010 | Duplicate service dependency ID | Assets `A, B` available; deps `A → B` (id=d1) and `C → D` (id=d1) | `DUPLICATE_SERVICE_DEPENDENCY_ID` | `DUPLICATE_SERVICE_DEPENDENCY_ID` |
+| DEP-011 | Duplicate attack source | Assets `A, B` available; sources `[A, A]` | `DUPLICATE_ATTACK_SOURCE_ID` | `DUPLICATE_ATTACK_SOURCE_ID` |
 
 ## 5. Test Matrix — Independence
 
@@ -106,6 +110,16 @@ Browser verification is not claimed. Quest headset validation is outstanding.
 | VAL-034 | Network edges count 2,049 | `LIMIT_EXCEEDED` |
 | VAL-035 | Service dependencies count 2,049 | `LIMIT_EXCEEDED` |
 | VAL-036 | Attack sources count 257 | `LIMIT_EXCEEDED` |
+| VAL-037 | Raw request exceeds 2 MiB | `LIMIT_EXCEEDED` |
+| VAL-038 | Raw request 2 MiB + 1 byte | `LIMIT_EXCEEDED` |
+| VAL-039 | Invalid asset ID grammar (starts with `-`) | `INVALID_GRAPH` |
+| VAL-040 | Invalid network edge ID grammar | `INVALID_GRAPH` |
+| VAL-041 | Invalid service dependency ID grammar | `INVALID_GRAPH` |
+| VAL-042 | Missing availability field | `MALFORMED_JSON` |
+| VAL-043 | Wrong field type (availability as number) | `MALFORMED_JSON` |
+| VAL-044 | Unknown nested property in asset | `MALFORMED_JSON` |
+| VAL-045 | Unknown nested property in edge | `MALFORMED_JSON` |
+| VAL-046 | Unknown nested property in dependency | `MALFORMED_JSON` |
 
 ## 7. Test Matrix — Determinism
 
@@ -128,13 +142,25 @@ Browser verification is not claimed. Quest headset validation is outstanding.
 | WASM-002 | Malformed JSON through raw binding | Returns `{ code: "MALFORMED_JSON", ... }` |
 | WASM-003 | Unsupported contract version through raw binding | Returns `{ code: "UNSUPPORTED_CONTRACT_VERSION", ... }` |
 | WASM-004 | Invalid request ID through raw binding | Returns `{ code: "INVALID_REQUEST_ID", ... }` |
-| WASM-05 | Unknown asset reference through raw binding | Returns `{ code: "UNKNOWN_ASSET_REFERENCE", ... }` |
+| WASM-005 | Unknown asset reference through raw binding | Returns `{ code: "UNKNOWN_ASSET_REFERENCE", ... }` |
 | WASM-006 | Limit exceeded through raw binding | Returns `{ code: "LIMIT_EXCEEDED", ... }` |
 
 WASM boundary tests invoke the raw `simulate_graph_json` export directly. No browser execution is
 claimed or required for this plan.
 
-## 9. Native vs WASM vs Browser Distinctions
+## 9. Test Matrix — Response Invariants
+
+| Test ID | Description | Expected invariant |
+|---------|-------------|-------------------|
+| INV-001 | One witness per reachable asset | `witnesses.length == reachable_asset_ids.length` |
+| INV-002 | Witness target matches reachable | Every `witness.target_asset` is in `reachable_asset_ids` |
+| INV-003 | Edge path length | `witness.edge_path.length == witness.asset_path.length - 1` |
+| INV-004 | Reachable/unreachable disjoint | No asset ID appears in both arrays |
+| INV-005 | All IDs exist in request | Every returned ID matches a request input ID |
+| INV-006 | Arrays sorted and unique | All ID arrays ascending, no duplicates |
+| INV-007 | Unavailable union | `unavailable_asset_ids` == sorted union of initial + impacted |
+
+## 10. Native vs WASM vs Browser Distinctions
 
 | Aspect | Native Rust tests | WASM boundary tests | Browser WASM tests |
 |--------|-------------------|---------------------|-------------------|
@@ -144,7 +170,7 @@ claimed or required for this plan.
 | Blocked by IWSDK issue? | No | No | Yes (M002 Windows runtime owner error) |
 | Quest headset required? | No | No | Yes (for performance validation) |
 
-## 10. Implementation Notes for M003.1
+## 11. Implementation Notes for M003.1
 
 - Prefer table-driven native Rust tests using the existing `#[cfg(test)]` module pattern.
 - Do not add new testing dependencies (e.g., `proptest`, `quickcheck`, `criterion`) unless

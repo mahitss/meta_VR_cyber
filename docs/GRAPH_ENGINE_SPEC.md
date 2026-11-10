@@ -77,6 +77,9 @@ A network edge has:
 Edges are directed. A connection from A to B does not automatically permit B to reach A.
 Bidirectional connectivity requires two explicitly modeled directed edges.
 
+Two network edges with the same `(source_asset_id, target_asset_id)` pair are invalid, even if
+their edge IDs differ. This produces `DUPLICATE_NETWORK_RELATIONSHIP`.
+
 ### Service dependency
 
 A service dependency has:
@@ -85,26 +88,38 @@ A service dependency has:
 - `dependent_asset_id`: the asset that requires the dependency.
 - `dependency_asset_id`: the asset being depended upon.
 
-Direction: `dependent_asset_id → dependency_asset_id`. All listed dependencies are required
-(AND semantics).
+Direction: `dependent_asset_id → dependency_asset_id`. Every listed dependency is required.
+A dependent asset becomes impacted when at least one of its required dependencies is unavailable.
+(OR semantics over dependencies: any one unavailable dependency impacts the dependent.)
+
+Two dependency records with the same `(dependent_asset_id, dependency_asset_id)` pair are
+invalid, even if their dependency IDs differ. This produces `DUPLICATE_SERVICE_RELATIONSHIP`.
 
 ### Attack sources
 
 A list of initially compromised asset IDs from which modeled reachability is calculated.
-An empty source list is permitted and produces an empty reachable set.
+An empty source list is permitted and produces an empty reachable set. Duplicate source IDs are
+rejected with `DUPLICATE_ATTACK_SOURCE_ID`.
 
 ### Identifier grammar
 
-Resource IDs (asset IDs, edge IDs, dependency IDs, scenario IDs, request IDs) follow this ASCII
-grammar:
+Two identifier classes are distinguished:
 
+**Resource identifiers** (asset IDs, network edge IDs, service dependency IDs, scenario IDs):
 - Start with an alphanumeric character (`[A-Za-z0-9]`).
 - May subsequently contain alphanumeric characters, `.`, `_`, `:`, or `-`.
-- Maximum length: 64 characters for resource identifiers; 256 characters for request IDs.
+- Maximum length: 64 characters.
 - All characters must be ASCII (`[\x20-\x7E]`).
+- Formal regex: `^[A-Za-z0-9][A-Za-z0-9._:\-]{0,63}$`
 
-Formal regex for resource identifiers: `^[A-Za-z0-9][A-Za-z0-9._:\-]{0,63}$`
-Formal regex for request IDs: `^[\x20-\x7E]{1,256}$`
+**Request IDs** (correlation identifiers, not resource identifiers):
+- Printable ASCII characters only.
+- Minimum 1 character.
+- Maximum 256 characters.
+- Formal regex: `^[\x20-\x7E]{1,256}$`
+
+Request IDs are not resource identifiers and are not validated against the resource identifier
+grammar.
 
 ## 4. Graph Semantics
 
@@ -156,9 +171,12 @@ Direction: `dependent_asset_id → dependency_asset_id`.
 #### Propagation rules
 
 1. An asset supplied as unavailable is an initial unavailable asset.
-2. If an asset's required dependency is unavailable, the dependent asset becomes impacted.
-3. Propagate this impact transitively.
-4. All listed dependencies are required (AND semantics).
+2. If at least one of an asset's required dependencies is unavailable, the dependent asset
+   becomes impacted. Equivalently: `dependent_available = all(required_dependencies_available)`,
+   so `dependent_impacted = any(required_dependency_unavailable)`.
+3. Propagate this impact transitively through the reverse dependency graph.
+4. All listed dependencies are required for availability; the unavailability of any one
+   required dependency impacts the dependent.
 5. Optional dependencies and alternative-provider logic are out of scope.
 6. Dependency cycles are permitted; propagation terminates through a visited set.
 7. Do not infer service dependencies from network connections.
@@ -225,9 +243,12 @@ Operation name: `graph_simulation` (proposed WASM export: `simulate_graph_json`)
 | `assets` | array of Asset | Yes | Max 256 entries. |
 | `network_edges` | array of NetworkEdge | Yes | Max 2,048 entries. |
 | `service_dependencies` | array of ServiceDependency | Yes | Max 2,048 entries. |
-| `attack_source_asset_ids` | array of string | Yes | Max 256 entries. |
+| `attack_source_asset_ids` | array of string | Yes | Max 256 entries. Duplicate values rejected. |
 
 Strict deserialization: `additionalProperties: false` at all levels.
+
+Raw serialized request size must not exceed 2 MiB (2,097,152 bytes). This check is performed
+before JSON parsing and returns `LIMIT_EXCEEDED` if exceeded.
 
 #### Asset
 
@@ -255,7 +276,9 @@ Strict deserialization: `additionalProperties: false` at all levels.
 
 ## 7. Response Contract (graph-simulation-response.v1.schema.json)
 
-#### Success response
+The response schema uses Draft-07 `oneOf` to distinguish success from error responses.
+
+### Success response
 
 | Field | Type | Description |
 |-------|------|-------------|
@@ -265,7 +288,7 @@ Strict deserialization: `additionalProperties: false` at all levels.
 | `network_reachability` | object | Network reachability result (Section 7.1). |
 | `service_impact` | object | Service dependency result (Section 7.2). |
 
-#### 7.1 Network reachability result
+### 7.1 Network reachability result
 
 | Field | Type | Description |
 |-------|------|-------------|
@@ -273,7 +296,7 @@ Strict deserialization: `additionalProperties: false` at all levels.
 | `unreachable_asset_ids` | array of string | Sorted ascending. Available-but-unreachable assets only. |
 | `witnesses` | array of Witness | One per reachable asset. Sorted by `target_asset`. |
 
-#### Witness
+### Witness
 
 | Field | Type | Description |
 |-------|------|-------------|
@@ -282,7 +305,7 @@ Strict deserialization: `additionalProperties: false` at all levels.
 | `asset_path` | array of string | Ordered asset IDs from source to target (inclusive). |
 | `edge_path` | array of string | Ordered edge IDs traversed. |
 
-#### 7.2 Service impact result
+### 7.2 Service impact result
 
 | Field | Type | Description |
 |-------|------|-------------|
@@ -290,7 +313,7 @@ Strict deserialization: `additionalProperties: false` at all levels.
 | `impacted_dependent_asset_ids` | array of string | Sorted ascending, excludes initial seeds. |
 | `unavailable_asset_ids` | array of string | Sorted ascending union. |
 
-#### Error response
+### Error response
 
 All invalid requests return:
 
@@ -300,32 +323,59 @@ All invalid requests return:
 
 Error codes are defined in Section 8. All errors return JSON, never panic.
 
+### Response invariants (not all expressible in JSON Schema)
+
+- Exactly one witness per reachable asset.
+- Witness `target_asset` equals the corresponding entry in `reachable_asset_ids`.
+- `edge_path.length = asset_path.length - 1` for every witness.
+- `reachable_asset_ids` and `unreachable_asset_ids` are disjoint.
+- All returned identifiers exist in the request.
+- All output ID arrays are sorted and unique.
+- `unavailable_asset_ids` equals the sorted union of initial and propagated unavailable assets.
+
 ## 8. Validation and Error Taxonomy
 
 ### Validation precedence (first failure wins)
 
-1. Malformed JSON body → `MALFORMED_JSON`
-2. Unsupported `contract_version` → `UNSUPPORTED_CONTRACT_VERSION`
-3. Invalid `request_id` → `INVALID_REQUEST_ID`
-4. Invalid `scenario_id` → `INVALID_SCENARIO_ID`
-5. Missing required field → `MALFORMED_JSON`
-6. Unknown field → `MALFORMED_JSON` (via `additionalProperties: false`)
-7. Duplicate asset ID → `DUPLICATE_ASSET_ID`
-8. Duplicate network-edge ID → `DUPLICATE_NETWORK_EDGE_ID`
-9. Duplicate service-dependency ID → `DUPLICATE_SERVICE_DEPENDENCY_ID`
-10. Unknown asset reference (edge or dependency) → `UNKNOWN_ASSET_REFERENCE`
-11. Duplicate directed network relationship → `DUPLICATE_NETWORK_RELATIONSHIP`
-12. Self-referencing relationship → `SELF_LOOP_NOT_ALLOWED`
-13. Invalid `availability` value → `INVALID_GRAPH`
-14. Excessively large input collection → `LIMIT_EXCEEDED`
-15. Attack source references missing asset → `UNKNOWN_ASSET_REFERENCE`
-16. Attack source references unavailable asset → `SOURCE_ASSET_UNAVAILABLE`
+Staged validation process compatible with strict deserialization:
+
+1. Enforce maximum raw request byte size (2 MiB) → `LIMIT_EXCEEDED`
+2. Parse syntactically valid JSON → `MALFORMED_JSON`
+3. Validate that the root is a JSON object → `MALFORMED_JSON`
+4. Validate `contract_version` → `UNSUPPORTED_CONTRACT_VERSION`
+5. Validate `request_id` → `INVALID_REQUEST_ID`
+6. Validate `scenario_id` → `INVALID_SCENARIO_ID`
+7. Check required fields, unknown fields, and structural JSON types → `MALFORMED_JSON`
+8. Enforce collection size limits → `LIMIT_EXCEEDED`
+9. Validate resource identifiers and availability values → `INVALID_GRAPH`
+10. Validate duplicate entity IDs → `DUPLICATE_ASSET_ID`, `DUPLICATE_NETWORK_EDGE_ID`,
+    `DUPLICATE_SERVICE_DEPENDENCY_ID`
+11. Validate duplicate graph relationships and duplicate attack sources →
+    `DUPLICATE_NETWORK_RELATIONSHIP`, `DUPLICATE_SERVICE_RELATIONSHIP`,
+    `DUPLICATE_ATTACK_SOURCE_ID`
+12. Validate referenced asset existence → `UNKNOWN_ASSET_REFERENCE`
+13. Validate prohibited self-loops → `SELF_LOOP_NOT_ALLOWED`
+14. Validate attack-source availability → `SOURCE_ASSET_UNAVAILABLE`
+
+Rust distinguishes error categories as follows:
+- **Invalid JSON syntax**: `serde_json::from_str::<serde_json::Value>` fails → `MALFORMED_JSON`
+- **Missing required fields**: Checked after parsing into `serde_json::Value` → `MALFORMED_JSON`
+- **Unknown JSON properties**: Checked against `additionalProperties: false` → `MALFORMED_JSON`
+- **Invalid JSON field types**: Checked against expected types (string, boolean, array) → `MALFORMED_JSON`
+- **Invalid availability enum values**: Custom validation after typed deserialization → `INVALID_GRAPH`
+  (Serde enum deserialization alone does not produce `INVALID_GRAPH`; a custom match is required)
+- **Graph-level semantic errors**: Duplicate IDs, unknown references, self-loops, limits →
+  their respective error codes
+
+A practical design parses into `serde_json::Value`, validates the envelope and structural
+conditions explicitly, then deserializes into strict typed models and performs semantic graph
+validation.
 
 ### Error codes
 
 | Code | Meaning |
 |------|---------|
-| `MALFORMED_JSON` | Body is not valid JSON, or missing/unknown fields. |
+| `MALFORMED_JSON` | Body is not valid JSON, or missing/unknown/type-incorrect fields. |
 | `UNSUPPORTED_CONTRACT_VERSION` | `contract_version` is not `"1.0"`. |
 | `INVALID_REQUEST_ID` | `request_id` is empty, non-ASCII, or > 256 chars. |
 | `INVALID_SCENARIO_ID` | `scenario_id` is empty, non-ASCII, > 64 chars, or violates grammar. |
@@ -333,11 +383,13 @@ Error codes are defined in Section 8. All errors return JSON, never panic.
 | `DUPLICATE_ASSET_ID` | Two assets share the same `id`. |
 | `DUPLICATE_NETWORK_EDGE_ID` | Two network edges share the same `id`. |
 | `DUPLICATE_SERVICE_DEPENDENCY_ID` | Two dependencies share the same `id`. |
+| `DUPLICATE_SERVICE_RELATIONSHIP` | Two dependencies share the same `(dependent_asset_id, dependency_asset_id)` pair. |
 | `UNKNOWN_ASSET_REFERENCE` | Edge or dependency references a non-existent asset ID. |
-| `DUPLICATE_NETWORK_RELATIONSHIP` | Two edges have the same `(source, target)` pair. |
+| `DUPLICATE_NETWORK_RELATIONSHIP` | Two edges have the same `(source_asset_id, target_asset_id)` pair. |
 | `SELF_LOOP_NOT_ALLOWED` | Edge or dependency references the same asset as source and target. |
 | `SOURCE_ASSET_UNAVAILABLE` | Attack source asset has `availability: "unavailable"`. |
-| `LIMIT_EXCEEDED` | Input collection exceeds MVP bounds (Section 9). |
+| `DUPLICATE_ATTACK_SOURCE_ID` | Duplicate value in `attack_source_asset_ids`. |
+| `LIMIT_EXCEEDED` | Input collection exceeds MVP bounds or raw request exceeds 2 MiB. |
 
 ### MVP bounds
 
@@ -349,6 +401,7 @@ Error codes are defined in Section 8. All errors return JSON, never panic.
 | Attack sources | 256 | Capped at asset count; multi-source BFS is linear in source count. |
 | Resource identifier length | 64 ASCII | Balances readability with fixed-size buffer efficiency. |
 | Request ID length | 256 ASCII | Matches existing health-check constraint. |
+| Raw serialized request size | 2 MiB (2,097,152 bytes) | Bounded to prevent denial-of-service through oversized payloads; checked before parsing. |
 
 Compatibility concern: If future scenarios require more than 256 assets or 2,048 edges, bounds must
 be raised deliberately with a performance review. This is not an engine bug but a design limit.
@@ -381,20 +434,23 @@ Input: assets, service_dependencies.
 1. Build reverse adjacency: for each dependency `(dependent → dep)`, add `dependent` to
    `dep`'s reverse out-list (nodes impacted when `dep` becomes unavailable). Sort each list by
    `dependent_asset_id` for determinism.
-2. Initialize queue with initially unavailable assets (sorted ascending).
-3. Initialize `impacted` set, `visited` set = initially unavailable assets.
-4. While queue not empty: pop front node `u`. For each `dependent` in sorted reverse out-list:
-   - If `dependent` is not in visited: check AND semantics — all of `dependent`'s dependencies
-     must be unavailable. If so, mark visited, add to impacted, push `dependent`.
-5. `initially_unavailable_asset_ids` = sorted initial seeds.
-6. `impacted_dependent_asset_ids` = sorted impacted set (excludes initial seeds).
-7. `unavailable_asset_ids` = sorted union.
+2. Build forward dependency map: for each asset, collect its required dependency IDs (sorted).
+3. Initialize queue with initially unavailable assets (sorted ascending).
+4. Initialize `impacted` set (empty), `visited` set = initially unavailable assets.
+5. While queue not empty: pop front node `u`. For each `dependent` in sorted reverse out-list:
+   - If `dependent` is not in visited: check OR semantics — if at least one of `dependent`'s
+     required dependencies is unavailable (i.e., in `visited`), mark `dependent` as impacted,
+     add to `impacted`, add to `visited`, push `dependent`.
+6. `initially_unavailable_asset_ids` = sorted initial seeds.
+7. `impacted_dependent_asset_ids` = sorted impacted set (excludes initial seeds).
+8. `unavailable_asset_ids` = sorted union.
 
 Complexity: O(V + E) time, O(V + E) space.
 
-AND-semantics check: when a node `d` has multiple dependencies, `d` becomes impacted only when
-all its dependencies are unavailable. The algorithm tracks a count of unavailable dependencies
-per node; when the count reaches the total dependency count, the node is impacted.
+OR-semantics rule: a dependent asset `d` becomes impacted when any of its required dependencies
+is unavailable. This is equivalent to `dependent_available = all(required_dependencies_available)`,
+so `dependent_impacted = any(required_dependency_unavailable)`. The algorithm does not wait for
+all dependencies of a dependent to become unavailable.
 
 ### 9.3 Deterministic collections
 

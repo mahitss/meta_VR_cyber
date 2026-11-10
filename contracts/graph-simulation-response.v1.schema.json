@@ -2,127 +2,162 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "graph-simulation-response.v1.schema.json",
   "title": "Graph Simulation Response",
-  "description": "Graph simulation response returned by the NetVigil XR security simulation engine (Rust/WASM). Contract version 1.0. Contains independent network reachability and service dependency impact results.",
+  "description": "Graph simulation response returned by the NetVigil XR security simulation engine (Rust/WASM). Contract version 1.0. Contains independent network reachability and service dependency impact results. Uses oneOf to distinguish success from error responses.",
   "type": "object",
-  "required": [
-    "contract_version",
-    "request_id",
-    "scenario_id",
-    "network_reachability",
-    "service_impact"
-  ],
-  "properties": {
-    "contract_version": {
-      "type": "string",
-      "description": "Echo of the request contract_version. Always \"1.0\" for contract v1.0.",
-      "const": "1.0"
-    },
-    "request_id": {
-      "type": "string",
-      "description": "Echo of the request request_id.",
-      "minLength": 1
-    },
-    "scenario_id": {
-      "type": "string",
-      "description": "Echo of the request scenario_id.",
-      "minLength": 1
-    },
-    "network_reachability": {
-      "type": "object",
-      "required": ["reachable_asset_ids", "unreachable_asset_ids", "witnesses"],
+  "oneOf": [
+    {
+      "description": "Success response with network reachability and service impact results.",
+      "required": ["contract_version", "request_id", "scenario_id", "network_reachability", "service_impact"],
       "properties": {
-        "reachable_asset_ids": {
-          "type": "array",
-          "description": "Sorted ascending array of asset IDs reachable from any attack source.",
-          "items": {
-            "type": "string"
-          },
-          "uniqueItems": true
+        "contract_version": {
+          "type": "string",
+          "description": "Echo of the request contract_version. Always \"1.0\" for contract v1.0.",
+          "const": "1.0"
         },
-        "unreachable_asset_ids": {
-          "type": "array",
-          "description": "Sorted ascending array of asset IDs that were available in the input but are not reachable.",
-          "items": {
-            "type": "string"
-          },
-          "uniqueItems": true
+        "request_id": {
+          "type": "string",
+          "description": "Echo of the request request_id.",
+          "minLength": 1,
+          "maxLength": 256,
+          "pattern": "^[\\x20-\\x7E]{1,256}$"
         },
-        "witnesses": {
-          "type": "array",
-          "description": "Deterministic shortest-path witness for every reachable asset, sorted by target_asset.",
-          "items": {
-            "type": "object",
-            "required": ["target_asset", "source_asset", "asset_path", "edge_path"],
-            "properties": {
-              "target_asset": {
-                "type": "string",
-                "description": "Reachable asset ID."
+        "scenario_id": {
+          "type": "string",
+          "description": "Echo of the request scenario_id.",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:\\-]{0,63}$"
+        },
+        "network_reachability": {
+          "type": "object",
+          "required": ["reachable_asset_ids", "unreachable_asset_ids", "witnesses"],
+          "properties": {
+            "reachable_asset_ids": {
+              "type": "array",
+              "description": "Sorted ascending array of asset IDs reachable from any attack source.",
+              "items": {
+                "type": "string"
               },
-              "source_asset": {
-                "type": "string",
-                "description": "Starting attack source ID."
-              },
-              "asset_path": {
-                "type": "array",
-                "description": "Ordered array of asset IDs from source to target (inclusive).",
-                "items": {
-                  "type": "string"
-                },
-                "uniqueItems": true
-              },
-              "edge_path": {
-                "type": "array",
-                "description": "Ordered array of edge IDs traversed. Length is one less than asset_path length.",
-                "items": {
-                  "type": "string"
-                },
-                "uniqueItems": true
-              }
+              "uniqueItems": true
             },
-            "additionalProperties": false
+            "unreachable_asset_ids": {
+              "type": "array",
+              "description": "Sorted ascending array of asset IDs that were available in the input but are not reachable.",
+              "items": {
+                "type": "string"
+              },
+              "uniqueItems": true
+            },
+            "witnesses": {
+              "type": "array",
+              "description": "Deterministic shortest-path witness for every reachable asset, sorted by target_asset.",
+              "items": {
+                "type": "object",
+                "required": ["target_asset", "source_asset", "asset_path", "edge_path"],
+                "properties": {
+                  "target_asset": {
+                    "type": "string",
+                    "description": "Reachable asset ID."
+                  },
+                  "source_asset": {
+                    "type": "string",
+                    "description": "Starting attack source ID."
+                  },
+                  "asset_path": {
+                    "type": "array",
+                    "description": "Ordered array of asset IDs from source to target (inclusive).",
+                    "items": {
+                      "type": "string"
+                    },
+                    "uniqueItems": true
+                  },
+                  "edge_path": {
+                    "type": "array",
+                    "description": "Ordered array of edge IDs traversed. Length is one less than asset_path length.",
+                    "items": {
+                      "type": "string"
+                    },
+                    "uniqueItems": true
+                  }
+                },
+                "additionalProperties": false
+              },
+              "uniqueItems": true
+            }
           },
-          "uniqueItems": true
+          "additionalProperties": false
+        },
+        "service_impact": {
+          "type": "object",
+          "required": [
+            "initially_unavailable_asset_ids",
+            "impacted_dependent_asset_ids",
+            "unavailable_asset_ids"
+          ],
+          "properties": {
+            "initially_unavailable_asset_ids": {
+              "type": "array",
+              "description": "Sorted ascending array of asset IDs supplied as unavailable in the input.",
+              "items": {
+                "type": "string"
+              },
+              "uniqueItems": true
+            },
+            "impacted_dependent_asset_ids": {
+              "type": "array",
+              "description": "Sorted ascending array of asset IDs that became impacted through propagation, excluding initial unavailable assets.",
+              "items": {
+                "type": "string"
+              },
+              "uniqueItems": true
+            },
+            "unavailable_asset_ids": {
+              "type": "array",
+              "description": "Sorted ascending union of initially unavailable and impacted assets.",
+              "items": {
+                "type": "string"
+              },
+              "uniqueItems": true
+            }
+          },
+          "additionalProperties": false
         }
       },
       "additionalProperties": false
     },
-    "service_impact": {
-      "type": "object",
-      "required": [
-        "initially_unavailable_asset_ids",
-        "impacted_dependent_asset_ids",
-        "unavailable_asset_ids"
-      ],
+    {
+      "description": "Error response returned when the request is invalid.",
+      "required": ["code", "message"],
       "properties": {
-        "initially_unavailable_asset_ids": {
-          "type": "array",
-          "description": "Sorted ascending array of asset IDs supplied as unavailable in the input.",
-          "items": {
-            "type": "string"
-          },
-          "uniqueItems": true
+        "code": {
+          "type": "string",
+          "description": "Error code from the documented taxonomy.",
+          "enum": [
+            "MALFORMED_JSON",
+            "UNSUPPORTED_CONTRACT_VERSION",
+            "INVALID_REQUEST_ID",
+            "INVALID_SCENARIO_ID",
+            "INVALID_GRAPH",
+            "DUPLICATE_ASSET_ID",
+            "DUPLICATE_NETWORK_EDGE_ID",
+            "DUPLICATE_SERVICE_DEPENDENCY_ID",
+            "DUPLICATE_SERVICE_RELATIONSHIP",
+            "UNKNOWN_ASSET_REFERENCE",
+            "DUPLICATE_NETWORK_RELATIONSHIP",
+            "SELF_LOOP_NOT_ALLOWED",
+            "SOURCE_ASSET_UNAVAILABLE",
+            "DUPLICATE_ATTACK_SOURCE_ID",
+            "LIMIT_EXCEEDED"
+          ]
         },
-        "impacted_dependent_asset_ids": {
-          "type": "array",
-          "description": "Sorted ascending array of asset IDs that became impacted through propagation, excluding initial unavailable assets.",
-          "items": {
-            "type": "string"
-          },
-          "uniqueItems": true
-        },
-        "unavailable_asset_ids": {
-          "type": "array",
-          "description": "Sorted ascending union of initially unavailable and impacted assets.",
-          "items": {
-            "type": "string"
-          },
-          "uniqueItems": true
+        "message": {
+          "type": "string",
+          "description": "Human-readable description of the error."
         }
       },
       "additionalProperties": false
     }
-  },
-  "additionalProperties": false,
+  ],
   "examples": [
     {
       "contract_version": "1.0",
@@ -157,6 +192,10 @@
         "impacted_dependent_asset_ids": [],
         "unavailable_asset_ids": []
       }
+    },
+    {
+      "code": "UNKNOWN_ASSET_REFERENCE",
+      "message": "A referenced asset does not exist."
     }
   ],
   "versioning_rules": [
@@ -166,7 +205,16 @@
   ],
   "error_behavior": [
     "When the request is invalid, the engine returns an error object instead: { code, message }.",
-    "Error codes: MALFORMED_JSON, UNSUPPORTED_CONTRACT_VERSION, INVALID_REQUEST_ID, INVALID_SCENARIO_ID, INVALID_GRAPH, DUPLICATE_ASSET_ID, DUPLICATE_NETWORK_EDGE_ID, DUPLICATE_SERVICE_DEPENDENCY_ID, UNKNOWN_ASSET_REFERENCE, DUPLICATE_NETWORK_RELATIONSHIP, SELF_LOOP_NOT_ALLOWED, SOURCE_ASSET_UNAVAILABLE, LIMIT_EXCEEDED.",
+    "Error codes: MALFORMED_JSON, UNSUPPORTED_CONTRACT_VERSION, INVALID_REQUEST_ID, INVALID_SCENARIO_ID, INVALID_GRAPH, DUPLICATE_ASSET_ID, DUPLICATE_NETWORK_EDGE_ID, DUPLICATE_SERVICE_DEPENDENCY_ID, DUPLICATE_SERVICE_RELATIONSHIP, UNKNOWN_ASSET_REFERENCE, DUPLICATE_NETWORK_RELATIONSHIP, SELF_LOOP_NOT_ALLOWED, SOURCE_ASSET_UNAVAILABLE, DUPLICATE_ATTACK_SOURCE_ID, LIMIT_EXCEEDED.",
     "The TypeScript adapter must validate the response shape and distinguish success from error responses."
+  ],
+  "response_invariants": [
+    "Exactly one witness per reachable asset.",
+    "Witness target_asset equals the corresponding entry in reachable_asset_ids.",
+    "edge_path.length = asset_path.length - 1 for every witness.",
+    "reachable_asset_ids and unreachable_asset_ids are disjoint.",
+    "All returned identifiers exist in the request.",
+    "All output ID arrays are sorted and unique.",
+    "unavailable_asset_ids equals the sorted union of initial and propagated unavailable assets."
   ]
 }
