@@ -58,7 +58,6 @@ meta_VR_cyber/
 ├── crates/
 │   └── security-engine/        # Rust WASM simulation engine
 │       ├── Cargo.toml
-│       ├── Cargo.lock
 │       ├── src/
 │       │   ├── lib.rs          # WASM entry point + health check
 │       │   ├── models.rs       # Request/response data models
@@ -205,16 +204,28 @@ machine paths.
 
 ## CI
 
-GitHub Actions (`.github/workflows/ci.yml`) runs two jobs:
+GitHub Actions (`.github/workflows/ci.yml`) runs two jobs on `windows-latest`:
 
-1. **rust** — `cargo fmt --all -- --check`, `cargo test --workspace`,
-   `cargo build --workspace --target wasm32-unknown-unknown`
-2. **frontend** — `pnpm install --frozen-lockfile`, `pnpm run typecheck`,
+1. **rust** — `cargo fmt --all -- --check`, `cargo test --workspace`
+   (native Rust unit + integration tests), `cargo build --workspace --target
+   wasm32-unknown-unknown` (WASM compilation)
+
+2. **frontend** — pnpm/action-setup (pnpm@12.18.0) → setup-node with pnpm
+   caching → `pnpm install --frozen-lockfile` → `pnpm run typecheck` →
    `pnpm run build`
 
-Browser-based verification is not executed in CI because it requires an XR-capable
-runtime. The WASM diagnostic (`wasm-dev-diagnostic.ts`) should be run manually in
-a browser during development.
+### Test distinction
+
+- **Native Rust tests** (`cargo test --workspace`): Run on the host machine.
+  Exercise the pure Rust logic (`health_check`, validation) without wasm-bindgen.
+  18 tests pass locally.
+
+- **Browser WASM tests** (`wasm-dev-diagnostic.ts`): Development-only diagnostic
+  that runs in the browser, importing the generated wasm-bindgen module and
+  invoking the actual `health_check_json` binding. Tests positive (valid request
+  through adapter) and negative (unsupported version, empty request ID, malformed
+  JSON through raw binding) cases. Not executed in CI — requires a browser/XR
+  runtime. Tree-shaken out of production builds.
 
 ## Security
 
