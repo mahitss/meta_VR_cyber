@@ -41,7 +41,7 @@ Browser verification is not claimed. Quest headset validation is outstanding.
 | NET-012 | Empty attack-source list | Assets `A,B` available; edge `A→B`; sources `[]` | `reachable: []`, `unreachable: ["A","B"]`, `witnesses: []` | — |
 | NET-013 | Deterministic shortest path | Assets `A,B,C,D` available; edges `A→B`, `B→C`, `A→C`, `C→D`; source `[A]` | Witness for C: path `[A,C]` (shorter than `[A,B,C]`) | — |
 | NET-014 | Equal-length path tie-breaking | Assets `A,B,C,D` available; edges `A→B`, `A→D`, `B→C`, `D→C`; source `[A]` | Witness for C uses path via B (B < D lexicographically) | — |
-| NET-015 | Tie-breaking with multiple attack sources | Assets `A,B,C,X,Y` available; edges `X→B`, `Y→D`, `B→C`, `D→C`; sources `[X, Y]` | Witness for C: source X wins (X < Y), path `[X,B,C]` | — |
+| NET-015 | Tie-breaking with multiple attack sources | Assets `A,B,C,D,X,Y` available; edges `X→B`, `Y→D`, `B→C`, `D→C`; sources `[X, Y]` | Witness for C: source X wins (X < Y), path `[X,B,C]` | — |
 | NET-016 | Duplicate directed relationship | Assets `A, B` available; edges `A→B` (id=e1) and `A→B` (id=e2) | `DUPLICATE_NETWORK_RELATIONSHIP` | `DUPLICATE_NETWORK_RELATIONSHIP` |
 | NET-017 | Input permutation determinism | Same graph, edges array permuted | Identical canonical output regardless of input order | — |
 

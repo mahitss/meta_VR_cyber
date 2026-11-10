@@ -11,9 +11,16 @@
 //! Invalid inputs produce explicit JSON errors, never panics.
 
 use wasm_bindgen::prelude::*;
+pub mod graph_algorithms;
+pub mod graph_models;
+pub mod graph_validation;
 pub mod models;
 pub mod validation;
 
+pub use graph_models::{
+    Asset, GraphSimulationRequest, GraphSimulationResponse, NetworkEdge, NetworkReachability,
+    ServiceDependency, ServiceImpact, Witness,
+};
 pub use models::{EngineError, HealthRequest, HealthResponse};
 pub use validation::validate_health_request;
 
@@ -73,6 +80,128 @@ pub fn health_check(request: &HealthRequest) -> Result<HealthResponse, EngineErr
         engine: "security-engine".to_string(),
         status: "ok".to_string(),
     })
+}
+
+/// Typed graph simulation operation.
+///
+/// Performs the full validation pipeline, network reachability calculation,
+/// and service-impact propagation. Returns deterministic results.
+pub fn simulate_graph(
+    request: &GraphSimulationRequest,
+) -> Result<GraphSimulationResponse, EngineError> {
+    // Stage 1-16: Validate via the graph_validation pipeline on serialized JSON.
+    let json = serde_json::to_string(request)
+        .map_err(|e| EngineError {
+            code: graph_validation::codes::MALFORMED_JSON.to_string(),
+            message: format!("failed to serialize request: {}", e),
+        })?;
+    graph_validation::validate_request(&json).map_err(|e| EngineError {
+        code: e.code,
+        message: e.message,
+    })?;
+
+    // Compute network reachability.
+    let reachability = graph_algorithms::compute_reachability(
+        &request.assets,
+        &request.network_edges,
+        &request.attack_source_asset_ids,
+    );
+
+    // Compute service impact.
+    let impact = graph_algorithms::compute_service_impact(
+        &request.assets,
+        &request.service_dependencies,
+    );
+
+    Ok(GraphSimulationResponse {
+        contract_version: request.contract_version.clone(),
+        request_id: request.request_id.clone(),
+        scenario_id: request.scenario_id.clone(),
+        network_reachability: NetworkReachability {
+            reachable_asset_ids: reachability.reachable_asset_ids,
+            unreachable_asset_ids: reachability.unreachable_asset_ids,
+            witnesses: reachability
+                .witnesses
+                .into_iter()
+                .map(|w| Witness {
+                    target_asset: w.target_asset,
+                    source_asset: w.source_asset,
+                    asset_path: w.asset_path,
+                    edge_path: w.edge_path,
+                })
+                .collect(),
+        },
+        service_impact: ServiceImpact {
+            initially_unavailable_asset_ids: impact.initially_unavailable_asset_ids,
+            impacted_dependent_asset_ids: impact.impacted_dependent_asset_ids,
+            unavailable_asset_ids: impact.unavailable_asset_ids,
+        },
+    })
+}
+
+/// Raw JSON graph simulation handler exported to JavaScript.
+///
+/// Accepts a JSON string, validates it strictly through the full 16-stage
+/// pipeline, computes reachability and impact, and returns a JSON string.
+/// Invalid input produces an error JSON object, never a Rust panic.
+#[wasm_bindgen]
+pub fn simulate_graph_json(input: &str) -> String {
+    // Stage 1: Raw byte limit.
+    if input.len() > graph_validation::MAX_REQUEST_BYTES {
+        return serde_json::to_string(&EngineError {
+            code: graph_validation::codes::LIMIT_EXCEEDED.to_string(),
+            message: format!(
+                "request body exceeds maximum size of {} bytes",
+                graph_validation::MAX_REQUEST_BYTES
+            ),
+        })
+        .unwrap_or_else(|_| {
+            r#"{"code":"LIMIT_EXCEEDED","message":"request body exceeds maximum size"}"#
+                .to_string()
+        });
+    }
+
+    // Stages 2-16: Validate via the graph_validation pipeline.
+    match graph_validation::validate_request(input) {
+        Ok(_value) => {
+            // Deserialize into typed models.
+            let request: GraphSimulationRequest =
+                match serde_json::from_str(input) {
+                    Ok(r) => r,
+                    Err(e) => {
+                        return serde_json::to_string(&EngineError {
+                            code: graph_validation::codes::MALFORMED_JSON.to_string(),
+                            message: format!("failed to deserialize request: {}", e),
+                        })
+                        .unwrap_or_else(|_| {
+                            r#"{"code":"MALFORMED_JSON","message":"failed to deserialize request"}"#
+                                .to_string()
+                        });
+                    }
+                };
+
+            // Run typed simulation (semantic validation stages 12-16 again
+            // in the typed path for defense in depth).
+            match simulate_graph(&request) {
+                Ok(response) => serde_json::to_string(&response).unwrap_or_else(|_| {
+                    r#"{"code":"INTERNAL_ERROR","message":"failed to serialize response"}"#
+                        .to_string()
+                }),
+                Err(err) => serde_json::to_string(&err).unwrap_or_else(|_| {
+                    r#"{"code":"INTERNAL_ERROR","message":"failed to serialize error"}"#
+                        .to_string()
+                }),
+            }
+        }
+        Err(err) => serde_json::to_string(&EngineError {
+            code: err.code,
+            message: err.message,
+        })
+        .unwrap_or_else(|_| {
+            r#"{"code":"INTERNAL_ERROR","message":"failed to serialize error"}"#
+                .to_string()
+        }),
+    }
 }
 
 #[cfg(test)]

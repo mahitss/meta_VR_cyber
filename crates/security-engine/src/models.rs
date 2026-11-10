@@ -41,7 +41,7 @@ pub struct HealthResponse {
 }
 
 /// Error returned by the engine for invalid input.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 pub struct EngineError {
     /// A stable error code.
     pub code: String,
