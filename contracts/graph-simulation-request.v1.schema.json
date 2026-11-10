@@ -175,6 +175,7 @@
     "Self-referencing relationship → SELF_LOOP_NOT_ALLOWED error.",
     "Invalid availability value → INVALID_GRAPH error.",
     "Duplicate attack source ID → DUPLICATE_ATTACK_SOURCE_ID error.",
+    "Attack source references an asset whose availability is unavailable → SOURCE_ASSET_UNAVAILABLE error.",
     "Input collection exceeds MVP bounds → LIMIT_EXCEEDED error.",
     "Raw serialized request exceeds 2 MiB (2,097,152 bytes) → LIMIT_EXCEEDED error.",
     "All errors return a JSON object with { code, message } fields."

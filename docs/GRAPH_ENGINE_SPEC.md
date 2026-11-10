@@ -540,7 +540,7 @@ The following corrections were applied in M003.0.2:
    unavailable assets (no propagated impact).
 
 8. **All four documents aligned**: The request schema, response schema, specification, and test
-   plan agree on all 16 error codes and their meanings.
+   plan agree on all 15 error codes and their meanings.
 
 ## 15. Corrections in M003.0.3
 
