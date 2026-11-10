@@ -1,10 +1,10 @@
 # NetVigil XR — Graph Engine Test Plan
 
-**Document version:** 1.2  
-**Status:** Specification — M003.0.2  
+**Document version:** 1.3  
+**Status:** Specification — M003.0.3  
 **Scope:** `security-engine` Rust/WASM crate  
 **Implementation status:** Not implemented. This document is a specification only.  
-**Implementation prohibited in M003.0.1.**
+M003.1 graph-engine implementation requires explicit principal-architect approval.
 
 ## 1. Purpose
 
@@ -14,7 +14,7 @@ to be implemented as table-driven native Rust tests initially, with no new testi
 
 ## 2. Verification Distinctions
 
-| Verification type | Execution environment | Scope | Status in M003.0.1 |
+| Verification type | Execution environment | Scope | Status in M003.0.2 |
 |-------------------|----------------------|-------|--------------------|
 | Native Rust tests | Host machine (cargo test) | Pure graph logic, validation, determinism | Specified only, not implemented |
 | WASM boundary tests | Node.js (wasm-bindgen) | Raw `simulate_graph_json` entry point via wasm-bindgen | Specified only |
@@ -72,61 +72,61 @@ Browser verification is not claimed. Quest headset validation is outstanding.
 
 ## 6. Test Matrix — Validation
 
-| Test ID | Input | Expected error code |
-|---------|-------|---------------------|
-| VAL-001 | `{not json}` | `MALFORMED_JSON` |
-| VAL-002 | `{}` (missing all fields) | `MALFORMED_JSON` |
-| VAL-003 | Missing `contract_version` | `MALFORMED_JSON` |
-| VAL-004 | Missing `request_id` | `MALFORMED_JSON` |
-| VAL-005 | Missing `scenario_id` | `MALFORMED_JSON` |
-| VAL-006 | Missing `assets` | `MALFORMED_JSON` |
-| VAL-007 | Missing `network_edges` | `MALFORMED_JSON` |
-| VAL-008 | Missing `service_dependencies` | `MALFORMED_JSON` |
-| VAL-009 | Missing `attack_source_asset_ids` | `MALFORMED_JSON` |
-| VAL-010 | Unknown top-level field | `MALFORMED_JSON` |
-| VAL-011 | Unknown asset field | `MALFORMED_JSON` |
-| VAL-012 | Unknown edge field | `MALFORMED_JSON` |
-| VAL-013 | Unknown dependency field | `MALFORMED_JSON` |
-| VAL-014 | `contract_version: "2.0"` | `UNSUPPORTED_CONTRACT_VERSION` |
-| VAL-015 | `request_id: ""` | `INVALID_REQUEST_ID` |
-| VAL-016 | `request_id: "réquest"` (non-ASCII) | `INVALID_REQUEST_ID` |
-| VAL-017 | `request_id` length 257 | `INVALID_REQUEST_ID` |
-| VAL-018 | `scenario_id: ""` | `INVALID_SCENARIO_ID` |
-| VAL-019 | `scenario_id` non-ASCII | `INVALID_SCENARIO_ID` |
-| VAL-020 | `scenario_id` length 65 | `INVALID_SCENARIO_ID` |
-| VAL-021 | `scenario_id` starts with `-` (violates grammar) | `INVALID_SCENARIO_ID` |
-| VAL-022 | Duplicate asset ID | `DUPLICATE_ASSET_ID` |
-| VAL-023 | Duplicate network-edge ID | `DUPLICATE_NETWORK_EDGE_ID` |
-| VAL-024 | Duplicate service-dependency ID | `DUPLICATE_SERVICE_DEPENDENCY_ID` |
-| VAL-025 | Edge references unknown asset | `UNKNOWN_ASSET_REFERENCE` |
-| VAL-026 | Dependency references unknown asset | `UNKNOWN_ASSET_REFERENCE` |
-| VAL-027 | Duplicate directed relationship (same source+target) | `DUPLICATE_NETWORK_RELATIONSHIP` |
-| VAL-028 | Self-loop edge (source == target) | `SELF_LOOP_NOT_ALLOWED` |
-| VAL-029 | Self-loop dependency (dependent == dependency) | `SELF_LOOP_NOT_ALLOWED` |
-| VAL-030 | `availability: "degraded"` (invalid enum) | `INVALID_GRAPH` |
-| VAL-031 | Attack source references missing asset | `UNKNOWN_ASSET_REFERENCE` |
-| VAL-032 | Attack source references unavailable asset | `SOURCE_ASSET_UNAVAILABLE` |
-| VAL-033 | Assets count 257 | `LIMIT_EXCEEDED` |
-| VAL-034 | Network edges count 2,049 | `LIMIT_EXCEEDED` |
-| VAL-035 | Service dependencies count 2,049 | `LIMIT_EXCEEDED` |
-| VAL-036 | Attack sources count 257 | `LIMIT_EXCEEDED` |
-| VAL-037 | Raw request exactly 2,097,152 bytes (valid, padded with whitespace) | Accepted (valid) | — |
-| VAL-038 | Raw request exactly 2,097,153 bytes | `LIMIT_EXCEEDED` | `LIMIT_EXCEEDED` |
-| VAL-047 | Assets count exactly 256, all valid references | Accepted (valid) | — |
-| VAL-048 | Network edges exactly 2,048, all valid references | Accepted (valid) | — |
-| VAL-049 | Service dependencies exactly 2,048, all valid references | Accepted (valid) | — |
-| VAL-050 | Attack sources exactly 256, all available assets referenced | Accepted (valid) | — |
-| VAL-051 | `contract_version: 123` (number, not string) | `MALFORMED_JSON` | `MALFORMED_JSON` |
-| VAL-052 | `request_id: 123` (number, not string) | `MALFORMED_JSON` | `MALFORMED_JSON` |
-| VAL-053 | `scenario_id: 123` (number, not string) | `MALFORMED_JSON` | `MALFORMED_JSON` |
-| VAL-039 | Invalid asset ID grammar (starts with `-`) | `INVALID_GRAPH` |
-| VAL-040 | Invalid network edge ID grammar | `INVALID_GRAPH` |
-| VAL-041 | Invalid service dependency ID grammar | `INVALID_GRAPH` |
-| VAL-042 | Missing availability field | `MALFORMED_JSON` |
-| VAL-043 | Wrong field type (availability as number) | `MALFORMED_JSON` |
-| VAL-044 | Unknown nested property in asset | `MALFORMED_JSON` |
-| VAL-045 | Unknown nested property in edge | `MALFORMED_JSON` |
-| VAL-046 | Unknown nested property in dependency | `MALFORMED_JSON` |
+| Test ID | Input | Expected outcome | Expected error code |
+|---------|-------|-----------------|---------------------|
+| VAL-001 | `{not json}` | Rejected | `MALFORMED_JSON` |
+| VAL-002 | `{}` (missing all fields) | Rejected | `MALFORMED_JSON` |
+| VAL-003 | Missing `contract_version` | Rejected | `MALFORMED_JSON` |
+| VAL-004 | Missing `request_id` | Rejected | `MALFORMED_JSON` |
+| VAL-005 | Missing `scenario_id` | Rejected | `MALFORMED_JSON` |
+| VAL-006 | Missing `assets` | Rejected | `MALFORMED_JSON` |
+| VAL-007 | Missing `network_edges` | Rejected | `MALFORMED_JSON` |
+| VAL-008 | Missing `service_dependencies` | Rejected | `MALFORMED_JSON` |
+| VAL-009 | Missing `attack_source_asset_ids` | Rejected | `MALFORMED_JSON` |
+| VAL-010 | Unknown top-level field | Rejected | `MALFORMED_JSON` |
+| VAL-011 | Unknown asset field | Rejected | `MALFORMED_JSON` |
+| VAL-012 | Unknown edge field | Rejected | `MALFORMED_JSON` |
+| VAL-013 | Unknown dependency field | Rejected | `MALFORMED_JSON` |
+| VAL-014 | `contract_version: "2.0"` | Rejected | `UNSUPPORTED_CONTRACT_VERSION` |
+| VAL-015 | `request_id: ""` | Rejected | `INVALID_REQUEST_ID` |
+| VAL-016 | `request_id: "réquest"` (non-ASCII) | Rejected | `INVALID_REQUEST_ID` |
+| VAL-017 | `request_id` length 257 | Rejected | `INVALID_REQUEST_ID` |
+| VAL-018 | `scenario_id: ""` | Rejected | `INVALID_SCENARIO_ID` |
+| VAL-019 | `scenario_id` non-ASCII | Rejected | `INVALID_SCENARIO_ID` |
+| VAL-020 | `scenario_id` length 65 | Rejected | `INVALID_SCENARIO_ID` |
+| VAL-021 | `scenario_id` starts with `-` (violates grammar) | Rejected | `INVALID_SCENARIO_ID` |
+| VAL-022 | Duplicate asset ID | Rejected | `DUPLICATE_ASSET_ID` |
+| VAL-023 | Duplicate network-edge ID | Rejected | `DUPLICATE_NETWORK_EDGE_ID` |
+| VAL-024 | Duplicate service-dependency ID | Rejected | `DUPLICATE_SERVICE_DEPENDENCY_ID` |
+| VAL-025 | Edge references unknown asset | Rejected | `UNKNOWN_ASSET_REFERENCE` |
+| VAL-026 | Dependency references unknown asset | Rejected | `UNKNOWN_ASSET_REFERENCE` |
+| VAL-027 | Duplicate directed relationship (same source+target) | Rejected | `DUPLICATE_NETWORK_RELATIONSHIP` |
+| VAL-028 | Self-loop edge (source == target) | Rejected | `SELF_LOOP_NOT_ALLOWED` |
+| VAL-029 | Self-loop dependency (dependent == dependency) | Rejected | `SELF_LOOP_NOT_ALLOWED` |
+| VAL-030 | `availability: "degraded"` (invalid enum) | Rejected | `INVALID_GRAPH` |
+| VAL-031 | Attack source references missing asset | Rejected | `UNKNOWN_ASSET_REFERENCE` |
+| VAL-032 | Attack source references unavailable asset | Rejected | `SOURCE_ASSET_UNAVAILABLE` |
+| VAL-033 | Assets count 257 | Rejected | `LIMIT_EXCEEDED` |
+| VAL-034 | Network edges count 2,049 | Rejected | `LIMIT_EXCEEDED` |
+| VAL-035 | Service dependencies count 2,049 | Rejected | `LIMIT_EXCEEDED` |
+| VAL-036 | Attack sources count 257 | Rejected | `LIMIT_EXCEEDED` |
+| VAL-037 | Raw request exactly 2,097,152 bytes (valid, padded with whitespace) | Accepted | — |
+| VAL-038 | Raw request exactly 2,097,153 bytes | Rejected | `LIMIT_EXCEEDED` |
+| VAL-047 | Assets count exactly 256, all valid references | Accepted | — |
+| VAL-048 | Network edges exactly 2,048, all valid references | Accepted | — |
+| VAL-049 | Service dependencies exactly 2,048, all valid references | Accepted | — |
+| VAL-050 | Attack sources exactly 256, all available assets referenced | Accepted | — |
+| VAL-051 | `contract_version: 123` (number, not string) | Rejected | `MALFORMED_JSON` |
+| VAL-052 | `request_id: 123` (number, not string) | Rejected | `MALFORMED_JSON` |
+| VAL-053 | `scenario_id: 123` (number, not string) | Rejected | `MALFORMED_JSON` |
+| VAL-039 | Invalid asset ID grammar (starts with `-`) | Rejected | `INVALID_GRAPH` |
+| VAL-040 | Invalid network edge ID grammar | Rejected | `INVALID_GRAPH` |
+| VAL-041 | Invalid service dependency ID grammar | Rejected | `INVALID_GRAPH` |
+| VAL-042 | Missing availability field | Rejected | `MALFORMED_JSON` |
+| VAL-043 | Wrong field type (availability as number) | Rejected | `MALFORMED_JSON` |
+| VAL-044 | Unknown nested property in asset | Rejected | `MALFORMED_JSON` |
+| VAL-045 | Unknown nested property in edge | Rejected | `MALFORMED_JSON` |
+| VAL-046 | Unknown nested property in dependency | Rejected | `MALFORMED_JSON` |
 
 ## 7. Test Matrix — Determinism
 
@@ -186,3 +186,60 @@ claimed or required for this plan.
   known environment limitation.
 - WASM boundary tests may be implemented as a separate integration test file that imports the
   crate's CDYLIB through `wasm-bindgen` in a Node.js environment.
+
+## 12. Corrections in M003.0.2
+
+The following corrections were applied in M003.0.2:
+
+1. **Dependency propagation semantics**: Changed from AND semantics (all required dependencies
+   must be unavailable) to OR semantics (any one unavailable required dependency impacts the
+   dependent). `DEP-004` preserves the one-unavailable-dependency case; `DEP-007` covers a
+   dependency cycle with no initially unavailable assets (no propagated impact).
+
+2. **Duplicate relationship validation**: Added `DUPLICATE_NETWORK_RELATIONSHIP` (same
+   `(source_asset_id, target_asset_id)` pair), `DUPLICATE_SERVICE_RELATIONSHIP` (same
+   `(dependent_asset_id, dependency_asset_id)` pair), and `DUPLICATE_ATTACK_SOURCE_ID`
+   (duplicate values in `attack_source_asset_ids`).
+
+3. **Identifier grammar**: Separated resource identifiers (asset, edge, dependency, scenario IDs)
+   from request IDs (correlation identifiers). Resource IDs use alphanumeric start with
+   `[A-Za-z0-9._:\-]` max 64 chars; request IDs use printable ASCII max 256 chars.
+
+4. **Validation pipeline**: Specified a staged validation process with exact deterministic
+   precedence (16 steps), including raw request size check (2 MiB), JSON parsing, required field
+   checks, structural type checks, contract version validation, collection size limits, duplicate
+   detection, reference validation, self-loop checks, and attack-source availability validation.
+
+5. **Request-size bound**: Added 2 MiB (2,097,152 bytes) maximum raw serialized request size,
+   checked before parsing, returning `LIMIT_EXCEEDED`.
+
+6. **Response schema**: Uses Draft-07 `oneOf` to distinguish success from error responses; error
+   code constrained to documented taxonomy via enum; added `response_invariants` section.
+
+7. **Test matrix corrections**: Replaced `NET-015` permutation test with duplicate relationship
+   case; added equal-length path tie-breaking with multiple attack sources; replaced redundant
+   `DEP-009` with cycle-no-unavailable case; added duplicate service dependency pair and duplicate
+   attack source validation; fixed `WASM-05` → `WASM-005` typo; added invalid identifier,
+   boundary, wrong-type, and response invariant tests.
+
+## 13. Corrections in M003.0.3
+
+The following corrections were applied in M003.0.3:
+
+1. **Request-schema structural type errors**: Explicitly documented that `contract_version`,
+   `request_id`, and `scenario_id` fields that are not strings produce `MALFORMED_JSON`; present
+   string values that violate their constraints produce `INVALID_REQUEST_ID` or
+   `INVALID_SCENARIO_ID` respectively; any other field with an incorrect structural JSON type
+   produces `MALFORMED_JSON`. Missing required fields continue to produce `MALFORMED_JSON`.
+
+2. **Validation test table normalization**: All 53 validation test rows (VAL-001 through VAL-053)
+   now use a consistent 4-column structure: `Test ID | Input | Expected outcome | Expected error code`.
+   Accepted cases state `Accepted` with `—` for the error code; rejected cases state `Rejected`
+   with the exact error code.
+
+3. **Mission labels and approval gates**: Replaced mission-specific implementation prohibitions
+   with the durable gate: `M003.1 graph-engine implementation requires explicit principal-architect
+   approval.` Updated verification table header from `Status in M003.0.1` to `Status in M003.0.2`.
+
+4. **Document revision metadata**: Specification advanced from version 1.1 to 1.2; test plan
+   advanced from version 1.2 to 1.3. JSON contract version remains 1.0.

@@ -1,10 +1,10 @@
 # NetVigil XR — Graph Engine Specification
 
-**Document version:** 1.1  
-**Status:** Specification — M003.0.2  
+**Document version:** 1.2  
+**Status:** Specification — M003.0.3  
 **Scope:** `security-engine` Rust/WASM crate  
 **Implementation status:** Not implemented. This document is a specification only.  
-**Implementation prohibited in M003.0.2.**
+M003.1 graph-engine implementation requires explicit principal-architect approval.
 
 ## 1. Purpose
 
@@ -541,3 +541,26 @@ The following corrections were applied in M003.0.2:
 
 8. **All four documents aligned**: The request schema, response schema, specification, and test
    plan agree on all 16 error codes and their meanings.
+
+## 15. Corrections in M003.0.3
+
+The following corrections were applied in M003.0.3:
+
+1. **Request-schema structural type errors**: Explicitly documented that
+   `contract_version`, `request_id`, and `scenario_id` fields that are not strings produce
+   `MALFORMED_JSON`; present string values that violate their constraints produce
+   `INVALID_REQUEST_ID` or `INVALID_SCENARIO_ID` respectively; any other field with an incorrect
+   structural JSON type produces `MALFORMED_JSON`. Missing required fields continue to produce
+   `MALFORMED_JSON`.
+
+2. **Validation test table normalization**: All 53 validation test rows (VAL-001 through VAL-053)
+   now use a consistent 4-column structure: `Test ID | Input | Expected outcome | Expected error code`.
+   Accepted cases state `Accepted` with `—` for the error code; rejected cases state `Rejected`
+   with the exact error code.
+
+3. **Mission labels and approval gates**: Replaced mission-specific implementation prohibitions
+   with the durable gate: `M003.1 graph-engine implementation requires explicit principal-architect
+   approval.` Updated verification table header from `Status in M003.0.1` to `Status in M003.0.2`.
+
+4. **Document revision metadata**: Specification advanced from version 1.1 to 1.2; test plan
+   advanced from version 1.2 to 1.3. JSON contract version remains 1.0.

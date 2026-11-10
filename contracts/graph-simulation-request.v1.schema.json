@@ -157,11 +157,14 @@
     "TypeScript adapters must not send a contract_version the Rust engine does not accept."
   ],
   "error_behavior": [
-    "Malformed JSON body → MALFORMED_JSON error.",
-    "Unsupported contract_version → UNSUPPORTED_CONTRACT_VERSION error.",
     "Missing required field → MALFORMED_JSON error.",
-    "Present string request_id is empty, non-printable, or too long → INVALID_REQUEST_ID error.",
-    "Present string scenario_id violates grammar or length → INVALID_SCENARIO_ID error.",
+    "contract_version is not a string → MALFORMED_JSON error.",
+    "contract_version is a string but not \"1.0\" → UNSUPPORTED_CONTRACT_VERSION error.",
+    "request_id is not a string → MALFORMED_JSON error.",
+    "request_id is a string but empty, non-printable, or too long → INVALID_REQUEST_ID error.",
+    "scenario_id is not a string → MALFORMED_JSON error.",
+    "scenario_id is a string but violates grammar or length → INVALID_SCENARIO_ID error.",
+    "Any other field has an incorrect structural JSON type → MALFORMED_JSON error.",
     "Unknown field → MALFORMED_JSON error (additionalProperties: false).",
     "Duplicate asset ID → DUPLICATE_ASSET_ID error.",
     "Duplicate network-edge ID → DUPLICATE_NETWORK_EDGE_ID error.",
