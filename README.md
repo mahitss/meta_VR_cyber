@@ -4,7 +4,7 @@
 **Competition:** Meta VR Start Developer Competition 2026  
 **Proposed track:** Productivity  
 **Proposed platform:** Meta Quest / WebXR  
-**Status:** M002 — Repository Foundation + Technical Spike (implementation authorized)
+**Status:** M002.1 — Engineering Corrections (CI portability + browser WASM verification)
 
 ## Product
 
@@ -52,14 +52,12 @@ Key architectural decisions (see `docs/ADR/`):
 meta_VR_cyber/
 ├── Cargo.toml                  # Rust workspace manifest
 ├── Cargo.lock                  # Rust dependency lockfile
-├── .cargo/config.toml          # Cargo linker configuration (Windows MinGW)
 ├── contracts/                  # Versioned JSON contract schemas
 │   ├── engine-health-request.v1.schema.json
 │   └── engine-health-response.v1.schema.json
 ├── crates/
 │   └── security-engine/        # Rust WASM simulation engine
 │       ├── Cargo.toml
-│       ├── Cargo.lock
 │       ├── src/
 │       │   ├── lib.rs          # WASM entry point + health check
 │       │   ├── models.rs       # Request/response data models
@@ -67,26 +65,32 @@ meta_VR_cyber/
 │       └── tests/
 │           └── health_check_test.rs
 ├── client/                     # IWSDK XR client (TypeScript + Vite)
-│   ├── package.json
-│   ├── pnpm-lock.yaml
+│   ├── package.json            # Includes packageManager: pnpm@12.18.0
+│   ├── pnpm-lock.yaml          # Pinned dependency lockfile
 │   ├── iwsdk.config.json       # IWSDK project authority
 │   ├── vite.config.ts
 │   ├── tsconfig.json
 │   ├── index.html
 │   ├── src/
-│   │   ├── index.ts            # World.create() + system registration
+│   │   ├── index.ts            # World.create() + system registration (+ dev WASM diagnostic)
 │   │   ├── assets.ts           # Asset manifest (shared runtime/editor)
 │   │   ├── components.ts       # ECS component declarations
-│   │   ├── simulation/         # WASM adapter + smoke test
+│   │   ├── panel.ts
+│   │   ├── robot-component.ts
+│   │   ├── robot.ts
+│   │   ├── vite-env.d.ts
+│   │   ├── simulation/         # WASM adapter + smoke test + dev diagnostic
 │   │   │   ├── wasm-adapter.ts
-│   │   │   └── wasm-health-smoke.ts
+│   │   │   ├── wasm-health-smoke.ts
+│   │   │   └── wasm-dev-diagnostic.ts   # dev-only, tree-shaken in production
 │   │   └── wasm/security_engine/  # Generated Rust/WASM bindings
 │   └── public/
 │       └── scenes/
 │           └── main.iwsdk.scene.json
 ├── .github/
 │   └── workflows/
-│       └── ci.yml              # GitHub Actions CI
+│       └── ci.yml              # GitHub Actions CI (rust + frontend jobs)
+├── .gitignore                  # Excludes .cargo/config.toml (local machine paths)
 └── docs/
     ├── PRD.md
     ├── ARCHITECTURE.md
@@ -101,9 +105,20 @@ meta_VR_cyber/
 ### Prerequisites
 
 - Node.js v24 (required by IWSDK @1.0.1 engines field)
-- pnpm v12+
+- pnpm v12.18.0 (exact version declared in `client/package.json` `packageManager`)
 - Rust stable toolchain with `wasm32-unknown-unknown` target
-- On Windows: MinGW-w64 at `C:\mingw64` (required for the GNU Rust toolchain linker)
+- wasm-pack (for building the Rust crate to WebAssembly)
+
+### Platform assumptions
+
+CI runs on `windows-latest` using the Rust MSVC toolchain (installed via
+`dtolnay/rust-toolchain`), which provides `link.exe` for native linking. No
+MinGW-w64 or `C:/mingw64` dependency is required in CI.
+
+Local development on Windows with the GNU Rust toolchain (`x86_64-pc-windows-gnu`)
+may require a MinGW linker workaround if the system MinGW runtime is incomplete.
+This is a local machine configuration only — `.cargo/config.toml` is git-ignored
+and must not be committed. See the "Windows MinGW linker workaround" section below.
 
 ### Install
 
@@ -155,6 +170,18 @@ pnpm run dev
 ```
 
 This launches the IWSDK-managed development server with the IWER (IWSDK WebXR Emulator).
+In development mode, a WASM diagnostic runs automatically and logs results to the
+browser console (see `client/src/simulation/wasm-dev-diagnostic.ts`). It is
+tree-shaken out of production builds.
+
+### Windows MinGW linker workaround (local development only)
+
+If you are developing on Windows with the GNU Rust toolchain and the system
+MinGW-w64 runtime is incomplete (missing `crtbegin.o`, `crtend.o`, `dllcrt2.o`),
+create a local `.cargo/config.toml` (not committed) pointing `LIBRARY_PATH` at
+the Rust toolchain's bundled `self-contained` runtime directory and your MinGW
+GCC library directory. This file is git-ignored and must never contain personal
+machine paths.
 
 ## Technology Versions (pinned)
 
@@ -174,6 +201,31 @@ This launches the IWSDK-managed development server with the IWER (IWSDK WebXR Em
 | wasm-pack | 0.15.1 |
 | serde | 1 |
 | serde_json | 1 |
+
+## CI
+
+GitHub Actions (`.github/workflows/ci.yml`) runs two jobs on `windows-latest`:
+
+1. **rust** — `cargo fmt --all -- --check`, `cargo test --workspace`
+   (native Rust unit + integration tests), `cargo build --workspace --target
+   wasm32-unknown-unknown` (WASM compilation)
+
+2. **frontend** — pnpm/action-setup (pnpm@12.18.0) → setup-node with pnpm
+   caching → `pnpm install --frozen-lockfile` → `pnpm run typecheck` →
+   `pnpm run build`
+
+### Test distinction
+
+- **Native Rust tests** (`cargo test --workspace`): Run on the host machine.
+  Exercise the pure Rust logic (`health_check`, validation) without wasm-bindgen.
+  18 tests pass locally.
+
+- **Browser WASM tests** (`wasm-dev-diagnostic.ts`): Development-only diagnostic
+  that runs in the browser, importing the generated wasm-bindgen module and
+  invoking the actual `health_check_json` binding. Tests positive (valid request
+  through adapter) and negative (unsupported version, empty request ID, malformed
+  JSON through raw binding) cases. Not executed in CI — requires a browser/XR
+  runtime. Tree-shaken out of production builds.
 
 ## Security
 
