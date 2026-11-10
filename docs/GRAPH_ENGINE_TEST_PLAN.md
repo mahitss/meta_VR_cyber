@@ -1,7 +1,7 @@
 # NetVigil XR — Graph Engine Test Plan
 
-**Document version:** 1.1  
-**Status:** Specification — M003.0.1  
+**Document version:** 1.2  
+**Status:** Specification — M003.0.2  
 **Scope:** `security-engine` Rust/WASM crate  
 **Implementation status:** Not implemented. This document is a specification only.  
 **Implementation prohibited in M003.0.1.**
@@ -58,7 +58,7 @@ Browser verification is not claimed. Quest headset validation is outstanding.
 | DEP-007 | Dependency cycle, no initially unavailable | Assets `A, B` both available; deps `A → B`, `B → A` | `initially_unavailable: []`, `impacted: []`, `unavailable: []` | — |
 | DEP-008 | Dependency cycle with unavailable | Assets `A, B` where `A: unavailable`; deps `A → B`, `B → A` | `initially_unavailable: ["A"]`, `impacted: ["B"]`, terminates (visited set) | — |
 | DEP-009 | Duplicate service dependency pair | Assets `A, B` available; deps `A → B` (id=d1) and `A → B` (id=d2) | `DUPLICATE_SERVICE_RELATIONSHIP` | `DUPLICATE_SERVICE_RELATIONSHIP` |
-| DEP-010 | Duplicate service dependency ID | Assets `A, B` available; deps `A → B` (id=d1) and `C → D` (id=d1) | `DUPLICATE_SERVICE_DEPENDENCY_ID` | `DUPLICATE_SERVICE_DEPENDENCY_ID` |
+| DEP-010 | Duplicate service dependency ID | Assets `A, B, C, D` all available; deps `A → B` (id=d1) and `C → D` (id=d1) | `DUPLICATE_SERVICE_DEPENDENCY_ID` | `DUPLICATE_SERVICE_DEPENDENCY_ID` |
 | DEP-011 | Duplicate attack source | Assets `A, B` available; sources `[A, A]` | `DUPLICATE_ATTACK_SOURCE_ID` | `DUPLICATE_ATTACK_SOURCE_ID` |
 
 ## 5. Test Matrix — Independence
@@ -110,8 +110,15 @@ Browser verification is not claimed. Quest headset validation is outstanding.
 | VAL-034 | Network edges count 2,049 | `LIMIT_EXCEEDED` |
 | VAL-035 | Service dependencies count 2,049 | `LIMIT_EXCEEDED` |
 | VAL-036 | Attack sources count 257 | `LIMIT_EXCEEDED` |
-| VAL-037 | Raw request exceeds 2 MiB | `LIMIT_EXCEEDED` |
-| VAL-038 | Raw request 2 MiB + 1 byte | `LIMIT_EXCEEDED` |
+| VAL-037 | Raw request exactly 2,097,152 bytes (valid, padded with whitespace) | Accepted (valid) | — |
+| VAL-038 | Raw request exactly 2,097,153 bytes | `LIMIT_EXCEEDED` | `LIMIT_EXCEEDED` |
+| VAL-047 | Assets count exactly 256, all valid references | Accepted (valid) | — |
+| VAL-048 | Network edges exactly 2,048, all valid references | Accepted (valid) | — |
+| VAL-049 | Service dependencies exactly 2,048, all valid references | Accepted (valid) | — |
+| VAL-050 | Attack sources exactly 256, all available assets referenced | Accepted (valid) | — |
+| VAL-051 | `contract_version: 123` (number, not string) | `MALFORMED_JSON` | `MALFORMED_JSON` |
+| VAL-052 | `request_id: 123` (number, not string) | `MALFORMED_JSON` | `MALFORMED_JSON` |
+| VAL-053 | `scenario_id: 123` (number, not string) | `MALFORMED_JSON` | `MALFORMED_JSON` |
 | VAL-039 | Invalid asset ID grammar (starts with `-`) | `INVALID_GRAPH` |
 | VAL-040 | Invalid network edge ID grammar | `INVALID_GRAPH` |
 | VAL-041 | Invalid service dependency ID grammar | `INVALID_GRAPH` |

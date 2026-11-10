@@ -159,20 +159,21 @@
   "error_behavior": [
     "Malformed JSON body → MALFORMED_JSON error.",
     "Unsupported contract_version → UNSUPPORTED_CONTRACT_VERSION error.",
-    "Missing or invalid request_id → INVALID_REQUEST_ID error.",
-    "Missing or invalid scenario_id → INVALID_SCENARIO_ID error.",
     "Missing required field → MALFORMED_JSON error.",
+    "Present string request_id is empty, non-printable, or too long → INVALID_REQUEST_ID error.",
+    "Present string scenario_id violates grammar or length → INVALID_SCENARIO_ID error.",
     "Unknown field → MALFORMED_JSON error (additionalProperties: false).",
     "Duplicate asset ID → DUPLICATE_ASSET_ID error.",
     "Duplicate network-edge ID → DUPLICATE_NETWORK_EDGE_ID error.",
     "Duplicate service-dependency ID → DUPLICATE_SERVICE_DEPENDENCY_ID error.",
+    "Duplicate service dependency pair (dependent_asset_id, dependency_asset_id) → DUPLICATE_SERVICE_RELATIONSHIP error.",
     "Unknown asset reference → UNKNOWN_ASSET_REFERENCE error.",
-    "Duplicate directed network relationship → DUPLICATE_NETWORK_RELATIONSHIP error.",
+    "Duplicate directed network relationship (source_asset_id, target_asset_id) → DUPLICATE_NETWORK_RELATIONSHIP error.",
     "Self-referencing relationship → SELF_LOOP_NOT_ALLOWED error.",
     "Invalid availability value → INVALID_GRAPH error.",
-    "Excessively large input collection → LIMIT_EXCEEDED error.",
-    "Attack source references missing asset → UNKNOWN_ASSET_REFERENCE error.",
-    "Attack source references unavailable asset → SOURCE_ASSET_UNAVAILABLE error.",
+    "Duplicate attack source ID → DUPLICATE_ATTACK_SOURCE_ID error.",
+    "Input collection exceeds MVP bounds → LIMIT_EXCEEDED error.",
+    "Raw serialized request exceeds 2 MiB (2,097,152 bytes) → LIMIT_EXCEEDED error.",
     "All errors return a JSON object with { code, message } fields."
   ]
 }

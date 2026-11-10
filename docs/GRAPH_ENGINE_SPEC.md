@@ -1,10 +1,10 @@
 # NetVigil XR — Graph Engine Specification
 
-**Document version:** 1.0  
-**Status:** Specification — M003.0  
+**Document version:** 1.1  
+**Status:** Specification — M003.0.2  
 **Scope:** `security-engine` Rust/WASM crate  
 **Implementation status:** Not implemented. This document is a specification only.  
-**Implementation prohibited in M003.0.**
+**Implementation prohibited in M003.0.2.**
 
 ## 1. Purpose
 
@@ -342,24 +342,33 @@ Staged validation process compatible with strict deserialization:
 1. Enforce maximum raw request byte size (2 MiB) → `LIMIT_EXCEEDED`
 2. Parse syntactically valid JSON → `MALFORMED_JSON`
 3. Validate that the root is a JSON object → `MALFORMED_JSON`
-4. Validate `contract_version` → `UNSUPPORTED_CONTRACT_VERSION`
-5. Validate `request_id` → `INVALID_REQUEST_ID`
-6. Validate `scenario_id` → `INVALID_SCENARIO_ID`
-7. Check required fields, unknown fields, and structural JSON types → `MALFORMED_JSON`
-8. Enforce collection size limits → `LIMIT_EXCEEDED`
-9. Validate resource identifiers and availability values → `INVALID_GRAPH`
-10. Validate duplicate entity IDs → `DUPLICATE_ASSET_ID`, `DUPLICATE_NETWORK_EDGE_ID`,
+4. Validate required fields are present → `MALFORMED_JSON`
+5. Validate unknown fields → `MALFORMED_JSON` (via `additionalProperties: false`)
+6. Validate structural JSON types of all fields → `MALFORMED_JSON`
+7. Validate `contract_version` is `"1.0"` → `UNSUPPORTED_CONTRACT_VERSION`
+8. Validate present string `request_id` is non-empty, printable ASCII, ≤ 256 chars → `INVALID_REQUEST_ID`
+9. Validate present string `scenario_id` matches grammar and ≤ 64 chars → `INVALID_SCENARIO_ID`
+10. Enforce collection size limits → `LIMIT_EXCEEDED`
+11. Validate resource identifiers and availability values → `INVALID_GRAPH`
+12. Validate duplicate entity IDs → `DUPLICATE_ASSET_ID`, `DUPLICATE_NETWORK_EDGE_ID`,
     `DUPLICATE_SERVICE_DEPENDENCY_ID`
-11. Validate duplicate graph relationships and duplicate attack sources →
+13. Validate duplicate graph relationships and duplicate attack sources →
     `DUPLICATE_NETWORK_RELATIONSHIP`, `DUPLICATE_SERVICE_RELATIONSHIP`,
     `DUPLICATE_ATTACK_SOURCE_ID`
-12. Validate referenced asset existence → `UNKNOWN_ASSET_REFERENCE`
-13. Validate prohibited self-loops → `SELF_LOOP_NOT_ALLOWED`
-14. Validate attack-source availability → `SOURCE_ASSET_UNAVAILABLE`
+14. Validate referenced asset existence → `UNKNOWN_ASSET_REFERENCE`
+15. Validate prohibited self-loops → `SELF_LOOP_NOT_ALLOWED`
+16. Validate attack-source availability → `SOURCE_ASSET_UNAVAILABLE`
+
+**Missing vs. present-but-invalid:** A missing required field (e.g., `request_id` absent from the
+object) is caught at step 4 → `MALFORMED_JSON`. A present field with an invalid value (e.g.,
+`request_id: ""` or `request_id: 123`) is caught at step 6 → `MALFORMED_JSON` (wrong type) or
+step 8 → `INVALID_REQUEST_ID` (right type, invalid value). A missing `contract_version` is caught
+at step 4 → `MALFORMED_JSON`; a present but unsupported `contract_version: "2.0"` is caught at
+step 7 → `UNSUPPORTED_CONTRACT_VERSION`.
 
 Rust distinguishes error categories as follows:
 - **Invalid JSON syntax**: `serde_json::from_str::<serde_json::Value>` fails → `MALFORMED_JSON`
-- **Missing required fields**: Checked after parsing into `serde_json::Value` → `MALFORMED_JSON`
+- **Missing required fields**: Checked on the parsed `serde_json::Value` → `MALFORMED_JSON`
 - **Unknown JSON properties**: Checked against `additionalProperties: false` → `MALFORMED_JSON`
 - **Invalid JSON field types**: Checked against expected types (string, boolean, array) → `MALFORMED_JSON`
 - **Invalid availability enum values**: Custom validation after typed deserialization → `INVALID_GRAPH`
@@ -498,3 +507,37 @@ Both entry points follow the same error contract: explicit JSON `{ code, message
 
 None identified at specification time. All semantics, validation rules, error codes, and
 algorithms are fully specified.
+
+## 14. Corrections in M003.0.2
+
+The following corrections were applied in M003.0.2:
+
+1. **Request-schema error behavior**: Added `DUPLICATE_SERVICE_RELATIONSHIP`, `DUPLICATE_ATTACK_SOURCE_ID`,
+   and raw-request-exceeds-2-MiB → `LIMIT_EXCEEDED` to the request schema's `error_behavior` metadata.
+   `DUPLICATE_NETWORK_RELATIONSHIP` remains documented.
+
+2. **Missing-field error precedence**: Clarified that missing required fields are caught before
+   format validation (step 4 → `MALFORMED_JSON`), while present-but-invalid values are caught
+   at their respective format-validation steps (step 8 → `INVALID_REQUEST_ID`, step 9 →
+   `INVALID_SCENARIO_ID`). A missing `contract_version` → `MALFORMED_JSON`; a present but
+   unsupported `contract_version` → `UNSUPPORTED_CONTRACT_VERSION`.
+
+3. **Raw request-size boundary tests**: VAL-037 tests exactly 2,097,152 bytes (valid, accepted);
+   VAL-038 tests exactly 2,097,153 bytes (`LIMIT_EXCEEDED`).
+
+4. **Maximum-collection acceptance tests**: VAL-047 (256 assets), VAL-048 (2,048 edges),
+   VAL-049 (2,048 service dependencies), VAL-050 (256 attack sources) prove exact maximums
+   are accepted. Existing over-limit tests VAL-033 through VAL-036 remain.
+
+5. **Wrong JSON type tests**: VAL-051 (`contract_version: 123`), VAL-052 (`request_id: 123`),
+   VAL-053 (`scenario_id: 123`) all return `MALFORMED_JSON`.
+
+6. **DEP-010 fixture fix**: Declares assets A, B, C, D (all available) to isolate duplicate
+   dependency-ID validation from unknown-asset-reference validation.
+
+7. **Dependency propagation semantics**: Confirmed OR semantics — any one unavailable required
+   dependency impacts the dependent. `DEP-007` covers a dependency cycle with no initially
+   unavailable assets (no propagated impact).
+
+8. **All four documents aligned**: The request schema, response schema, specification, and test
+   plan agree on all 16 error codes and their meanings.
