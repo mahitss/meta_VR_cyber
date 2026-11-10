@@ -119,4 +119,3 @@ pub struct ServiceImpact {
     pub impacted_dependent_asset_ids: Vec<String>,
     pub unavailable_asset_ids: Vec<String>,
 }
-

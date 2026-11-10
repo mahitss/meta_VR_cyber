@@ -7,9 +7,7 @@
 //! All algorithms use deterministic ordered collections (BTreeMap, sorted Vecs)
 //! and never depend on HashMap iteration order.
 
-use crate::graph_models::{
-    Asset, NetworkEdge, ServiceDependency,
-};
+use crate::graph_models::{Asset, NetworkEdge, ServiceDependency};
 
 /// Result of network reachability computation.
 #[derive(Debug, Clone)]
@@ -84,8 +82,7 @@ pub fn compute_reachability(
     let mut reachable: std::collections::HashSet<String> = std::collections::HashSet::new();
     let mut predecessor: std::collections::HashMap<String, String> =
         std::collections::HashMap::new();
-    let mut pred_edge: std::collections::HashMap<String, String> =
-        std::collections::HashMap::new();
+    let mut pred_edge: std::collections::HashMap<String, String> = std::collections::HashMap::new();
 
     let mut queue: std::collections::VecDeque<String> = std::collections::VecDeque::new();
 
@@ -233,9 +230,8 @@ pub fn compute_service_impact(
                 }
                 // OR semantics: check if ANY of dependent's dependencies is unavailable.
                 let dependent_deps = deps_map.get(dependent);
-                let any_dep_unavailable = dependent_deps.map_or(false, |deps| {
-                    deps.iter().any(|d| visited.contains(d))
-                });
+                let any_dep_unavailable =
+                    dependent_deps.map_or(false, |deps| deps.iter().any(|d| visited.contains(d)));
 
                 if any_dep_unavailable {
                     visited.insert(dependent.clone());

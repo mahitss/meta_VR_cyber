@@ -10,9 +10,7 @@
 //!
 //! Total: 100 native cases.
 
-use security_engine::graph_algorithms::{
-    compute_reachability, compute_service_impact,
-};
+use security_engine::graph_algorithms::{compute_reachability, compute_service_impact};
 use security_engine::graph_models::{
     Asset, GraphSimulationRequest, NetworkEdge, ServiceDependency,
 };
@@ -71,7 +69,11 @@ fn request(
 #[test]
 fn net_001_empty_graph() {
     let request = request(vec![], vec![], vec![], vec![]);
-    let result = compute_reachability(&request.assets, &request.network_edges, &request.attack_source_asset_ids);
+    let result = compute_reachability(
+        &request.assets,
+        &request.network_edges,
+        &request.attack_source_asset_ids,
+    );
     assert!(result.reachable_asset_ids.is_empty());
     assert!(result.unreachable_asset_ids.is_empty());
     assert!(result.witnesses.is_empty());
@@ -85,7 +87,11 @@ fn net_002_single_asset() {
         vec![],
         vec!["A".to_string()],
     );
-    let result = compute_reachability(&request.assets, &request.network_edges, &request.attack_source_asset_ids);
+    let result = compute_reachability(
+        &request.assets,
+        &request.network_edges,
+        &request.attack_source_asset_ids,
+    );
     assert_eq!(result.reachable_asset_ids, vec!["A".to_string()]);
     assert!(result.unreachable_asset_ids.is_empty());
     assert_eq!(result.witnesses.len(), 1);
@@ -103,10 +109,21 @@ fn net_003_direct_connection() {
         vec![],
         vec!["A".to_string()],
     );
-    let result = compute_reachability(&request.assets, &request.network_edges, &request.attack_source_asset_ids);
-    assert_eq!(result.reachable_asset_ids, vec!["A".to_string(), "B".to_string()]);
+    let result = compute_reachability(
+        &request.assets,
+        &request.network_edges,
+        &request.attack_source_asset_ids,
+    );
+    assert_eq!(
+        result.reachable_asset_ids,
+        vec!["A".to_string(), "B".to_string()]
+    );
     assert!(result.unreachable_asset_ids.is_empty());
-    let b_witness = result.witnesses.iter().find(|w| w.target_asset == "B").unwrap();
+    let b_witness = result
+        .witnesses
+        .iter()
+        .find(|w| w.target_asset == "B")
+        .unwrap();
     assert_eq!(b_witness.asset_path, vec!["A".to_string(), "B".to_string()]);
     assert_eq!(b_witness.edge_path, vec!["e1".to_string()]);
 }
@@ -114,19 +131,37 @@ fn net_003_direct_connection() {
 #[test]
 fn net_004_multi_hop_connection() {
     let request = request(
-        vec![asset("A", "available"), asset("B", "available"), asset("C", "available")],
+        vec![
+            asset("A", "available"),
+            asset("B", "available"),
+            asset("C", "available"),
+        ],
         vec![edge("e1", "A", "B", true), edge("e2", "B", "C", true)],
         vec![],
         vec!["A".to_string()],
     );
-    let result = compute_reachability(&request.assets, &request.network_edges, &request.attack_source_asset_ids);
+    let result = compute_reachability(
+        &request.assets,
+        &request.network_edges,
+        &request.attack_source_asset_ids,
+    );
     assert_eq!(
         result.reachable_asset_ids,
         vec!["A".to_string(), "B".to_string(), "C".to_string()]
     );
-    let c_witness = result.witnesses.iter().find(|w| w.target_asset == "C").unwrap();
-    assert_eq!(c_witness.asset_path, vec!["A".to_string(), "B".to_string(), "C".to_string()]);
-    assert_eq!(c_witness.edge_path, vec!["e1".to_string(), "e2".to_string()]);
+    let c_witness = result
+        .witnesses
+        .iter()
+        .find(|w| w.target_asset == "C")
+        .unwrap();
+    assert_eq!(
+        c_witness.asset_path,
+        vec!["A".to_string(), "B".to_string(), "C".to_string()]
+    );
+    assert_eq!(
+        c_witness.edge_path,
+        vec!["e1".to_string(), "e2".to_string()]
+    );
 }
 
 #[test]
@@ -137,7 +172,11 @@ fn net_005_directed_edge_behavior() {
         vec![],
         vec!["B".to_string()],
     );
-    let result = compute_reachability(&request.assets, &request.network_edges, &request.attack_source_asset_ids);
+    let result = compute_reachability(
+        &request.assets,
+        &request.network_edges,
+        &request.attack_source_asset_ids,
+    );
     assert_eq!(result.reachable_asset_ids, vec!["B".to_string()]);
     assert_eq!(result.unreachable_asset_ids, vec!["A".to_string()]);
 }
@@ -146,14 +185,15 @@ fn net_005_directed_edge_behavior() {
 fn net_006_explicit_reverse_edge() {
     let request = request(
         vec![asset("A", "available"), asset("B", "available")],
-        vec![
-            edge("e1", "A", "B", true),
-            edge("e2", "B", "A", true),
-        ],
+        vec![edge("e1", "A", "B", true), edge("e2", "B", "A", true)],
         vec![],
         vec!["A".to_string()],
     );
-    let result = compute_reachability(&request.assets, &request.network_edges, &request.attack_source_asset_ids);
+    let result = compute_reachability(
+        &request.assets,
+        &request.network_edges,
+        &request.attack_source_asset_ids,
+    );
     assert_eq!(
         result.reachable_asset_ids,
         vec!["A".to_string(), "B".to_string()]
@@ -169,7 +209,11 @@ fn net_007_disabled_edge() {
         vec![],
         vec!["A".to_string()],
     );
-    let result = compute_reachability(&request.assets, &request.network_edges, &request.attack_source_asset_ids);
+    let result = compute_reachability(
+        &request.assets,
+        &request.network_edges,
+        &request.attack_source_asset_ids,
+    );
     assert_eq!(result.reachable_asset_ids, vec!["A".to_string()]);
     assert_eq!(result.unreachable_asset_ids, vec!["B".to_string()]);
 }
@@ -186,7 +230,11 @@ fn net_008_unavailable_intermediate() {
         vec![],
         vec!["A".to_string()],
     );
-    let result = compute_reachability(&request.assets, &request.network_edges, &request.attack_source_asset_ids);
+    let result = compute_reachability(
+        &request.assets,
+        &request.network_edges,
+        &request.attack_source_asset_ids,
+    );
     assert_eq!(result.reachable_asset_ids, vec!["A".to_string()]);
     assert_eq!(result.unreachable_asset_ids, vec!["C".to_string()]);
 }
@@ -204,7 +252,11 @@ fn net_009_disconnected_component() {
         vec![],
         vec!["A".to_string()],
     );
-    let result = compute_reachability(&request.assets, &request.network_edges, &request.attack_source_asset_ids);
+    let result = compute_reachability(
+        &request.assets,
+        &request.network_edges,
+        &request.attack_source_asset_ids,
+    );
     assert_eq!(
         result.reachable_asset_ids,
         vec!["A".to_string(), "B".to_string()]
@@ -227,7 +279,11 @@ fn net_010_multiple_attack_sources() {
         vec![],
         vec!["A".to_string(), "C".to_string()],
     );
-    let result = compute_reachability(&request.assets, &request.network_edges, &request.attack_source_asset_ids);
+    let result = compute_reachability(
+        &request.assets,
+        &request.network_edges,
+        &request.attack_source_asset_ids,
+    );
     assert_eq!(
         result.reachable_asset_ids,
         vec!["A".to_string(), "B".to_string(), "C".to_string()]
@@ -250,7 +306,11 @@ fn net_011_cyclic_network() {
         vec![],
         vec!["A".to_string()],
     );
-    let result = compute_reachability(&request.assets, &request.network_edges, &request.attack_source_asset_ids);
+    let result = compute_reachability(
+        &request.assets,
+        &request.network_edges,
+        &request.attack_source_asset_ids,
+    );
     assert_eq!(
         result.reachable_asset_ids,
         vec!["A".to_string(), "B".to_string(), "C".to_string()]
@@ -266,7 +326,11 @@ fn net_012_empty_attack_source_list() {
         vec![],
         vec![],
     );
-    let result = compute_reachability(&request.assets, &request.network_edges, &request.attack_source_asset_ids);
+    let result = compute_reachability(
+        &request.assets,
+        &request.network_edges,
+        &request.attack_source_asset_ids,
+    );
     assert!(result.reachable_asset_ids.is_empty());
     assert_eq!(
         result.unreachable_asset_ids,
@@ -293,8 +357,16 @@ fn net_013_deterministic_shortest_path() {
         vec![],
         vec!["A".to_string()],
     );
-    let result = compute_reachability(&request.assets, &request.network_edges, &request.attack_source_asset_ids);
-    let c_witness = result.witnesses.iter().find(|w| w.target_asset == "C").unwrap();
+    let result = compute_reachability(
+        &request.assets,
+        &request.network_edges,
+        &request.attack_source_asset_ids,
+    );
+    let c_witness = result
+        .witnesses
+        .iter()
+        .find(|w| w.target_asset == "C")
+        .unwrap();
     // Direct edge A->C should be preferred over A->B->C
     assert_eq!(c_witness.asset_path, vec!["A".to_string(), "C".to_string()]);
     assert_eq!(c_witness.edge_path, vec!["e3".to_string()]);
@@ -318,11 +390,25 @@ fn net_014_equal_length_path_tie_breaking() {
         vec![],
         vec!["A".to_string()],
     );
-    let result = compute_reachability(&request.assets, &request.network_edges, &request.attack_source_asset_ids);
-    let c_witness = result.witnesses.iter().find(|w| w.target_asset == "C").unwrap();
+    let result = compute_reachability(
+        &request.assets,
+        &request.network_edges,
+        &request.attack_source_asset_ids,
+    );
+    let c_witness = result
+        .witnesses
+        .iter()
+        .find(|w| w.target_asset == "C")
+        .unwrap();
     // Both paths have length 2. B < D lexicographically, so path via B wins.
-    assert_eq!(c_witness.asset_path, vec!["A".to_string(), "B".to_string(), "C".to_string()]);
-    assert_eq!(c_witness.edge_path, vec!["e1".to_string(), "e3".to_string()]);
+    assert_eq!(
+        c_witness.asset_path,
+        vec!["A".to_string(), "B".to_string(), "C".to_string()]
+    );
+    assert_eq!(
+        c_witness.edge_path,
+        vec!["e1".to_string(), "e3".to_string()]
+    );
 }
 
 #[test]
@@ -345,21 +431,29 @@ fn net_015_tie_breaking_multiple_attack_sources() {
         vec![],
         vec!["X".to_string(), "Y".to_string()],
     );
-    let result = compute_reachability(&request.assets, &request.network_edges, &request.attack_source_asset_ids);
-    let c_witness = result.witnesses.iter().find(|w| w.target_asset == "C").unwrap();
+    let result = compute_reachability(
+        &request.assets,
+        &request.network_edges,
+        &request.attack_source_asset_ids,
+    );
+    let c_witness = result
+        .witnesses
+        .iter()
+        .find(|w| w.target_asset == "C")
+        .unwrap();
     // X < Y lexicographically, so source X wins.
     assert_eq!(c_witness.source_asset, "X");
-    assert_eq!(c_witness.asset_path, vec!["X".to_string(), "B".to_string(), "C".to_string()]);
+    assert_eq!(
+        c_witness.asset_path,
+        vec!["X".to_string(), "B".to_string(), "C".to_string()]
+    );
 }
 
 #[test]
 fn net_016_duplicate_directed_relationship() {
     let request = request(
         vec![asset("A", "available"), asset("B", "available")],
-        vec![
-            edge("e1", "A", "B", true),
-            edge("e2", "A", "B", true),
-        ],
+        vec![edge("e1", "A", "B", true), edge("e2", "A", "B", true)],
         vec![],
         vec!["A".to_string()],
     );
@@ -375,14 +469,8 @@ fn net_017_input_permutation_determinism() {
         asset("B", "available"),
         asset("C", "available"),
     ];
-    let edges1 = vec![
-        edge("e1", "A", "B", true),
-        edge("e2", "B", "C", true),
-    ];
-    let edges2 = vec![
-        edge("e2", "B", "C", true),
-        edge("e1", "A", "B", true),
-    ];
+    let edges1 = vec![edge("e1", "A", "B", true), edge("e2", "B", "C", true)];
+    let edges2 = vec![edge("e2", "B", "C", true), edge("e1", "A", "B", true)];
     let req1 = request(assets.clone(), edges1, vec![], vec!["A".to_string()]);
     let req2 = request(assets.clone(), edges2, vec![], vec!["A".to_string()]);
     let result1 = simulate_graph(&req1);
@@ -417,7 +505,10 @@ fn dep_002_direct_dependency_failure() {
         vec![],
     );
     let result = compute_service_impact(&request.assets, &request.service_dependencies);
-    assert_eq!(result.initially_unavailable_asset_ids, vec!["DB".to_string()]);
+    assert_eq!(
+        result.initially_unavailable_asset_ids,
+        vec!["DB".to_string()]
+    );
     assert_eq!(result.impacted_dependent_asset_ids, vec!["App".to_string()]);
     assert_eq!(
         result.unavailable_asset_ids,
@@ -438,7 +529,10 @@ fn dep_003_multi_level_cascading_impact() {
         vec![],
     );
     let result = compute_service_impact(&request.assets, &request.service_dependencies);
-    assert_eq!(result.initially_unavailable_asset_ids, vec!["C".to_string()]);
+    assert_eq!(
+        result.initially_unavailable_asset_ids,
+        vec!["C".to_string()]
+    );
     assert_eq!(
         result.impacted_dependent_asset_ids,
         vec!["A".to_string(), "B".to_string()]
@@ -465,7 +559,10 @@ fn dep_004_one_unavailable_required_dependency() {
         vec![],
     );
     let result = compute_service_impact(&request.assets, &request.service_dependencies);
-    assert_eq!(result.initially_unavailable_asset_ids, vec!["DB".to_string()]);
+    assert_eq!(
+        result.initially_unavailable_asset_ids,
+        vec!["DB".to_string()]
+    );
     assert_eq!(result.impacted_dependent_asset_ids, vec!["App".to_string()]);
     assert_eq!(
         result.unavailable_asset_ids,
@@ -476,7 +573,11 @@ fn dep_004_one_unavailable_required_dependency() {
 #[test]
 fn dep_005_unrelated_asset_unaffected() {
     let request = request(
-        vec![asset("A", "unavailable"), asset("B", "available"), asset("C", "available")],
+        vec![
+            asset("A", "unavailable"),
+            asset("B", "available"),
+            asset("C", "available"),
+        ],
         vec![],
         vec![dependency("d1", "B", "C")],
         vec![],
@@ -495,7 +596,10 @@ fn dep_006_initially_unavailable_asset() {
         vec![],
     );
     let result = compute_service_impact(&request.assets, &request.service_dependencies);
-    assert_eq!(result.initially_unavailable_asset_ids, vec!["A".to_string()]);
+    assert_eq!(
+        result.initially_unavailable_asset_ids,
+        vec!["A".to_string()]
+    );
     assert_eq!(result.impacted_dependent_asset_ids, vec!["B".to_string()]);
     assert_eq!(
         result.unavailable_asset_ids,
@@ -526,7 +630,10 @@ fn dep_008_dependency_cycle_with_unavailable() {
         vec![],
     );
     let result = compute_service_impact(&request.assets, &request.service_dependencies);
-    assert_eq!(result.initially_unavailable_asset_ids, vec!["A".to_string()]);
+    assert_eq!(
+        result.initially_unavailable_asset_ids,
+        vec!["A".to_string()]
+    );
     assert_eq!(result.impacted_dependent_asset_ids, vec!["B".to_string()]);
     assert_eq!(
         result.unavailable_asset_ids,
@@ -539,10 +646,7 @@ fn dep_009_duplicate_service_dependency_pair() {
     let request = request(
         vec![asset("A", "available"), asset("B", "available")],
         vec![],
-        vec![
-            dependency("d1", "A", "B"),
-            dependency("d2", "A", "B"),
-        ],
+        vec![dependency("d1", "A", "B"), dependency("d2", "A", "B")],
         vec![],
     );
     let result = simulate_graph(&request);
@@ -560,10 +664,7 @@ fn dep_010_duplicate_service_dependency_id() {
             asset("D", "available"),
         ],
         vec![],
-        vec![
-            dependency("d1", "A", "B"),
-            dependency("d1", "C", "D"),
-        ],
+        vec![dependency("d1", "A", "B"), dependency("d1", "C", "D")],
         vec![],
     );
     let result = simulate_graph(&request);
@@ -599,7 +700,10 @@ fn ind_001_dependency_does_not_create_reachability() {
     let result = simulate_graph(&request);
     assert!(result.is_ok());
     let response = result.unwrap();
-    assert_eq!(response.network_reachability.reachable_asset_ids, vec!["A".to_string()]);
+    assert_eq!(
+        response.network_reachability.reachable_asset_ids,
+        vec!["A".to_string()]
+    );
     assert_eq!(
         response.network_reachability.unreachable_asset_ids,
         vec!["B".to_string()]
@@ -666,10 +770,7 @@ fn ind_004_reachability_does_not_imply_exploitability() {
 
 fn make_base_request() -> GraphSimulationRequest {
     request(
-        vec![
-            asset("A", "available"),
-            asset("B", "available"),
-        ],
+        vec![asset("A", "available"), asset("B", "available")],
         vec![edge("e1", "A", "B", true)],
         vec![dependency("d1", "A", "B")],
         vec!["A".to_string()],
@@ -807,7 +908,9 @@ fn val_010_unknown_top_level_field() {
     let req = make_base_request();
     // Add unknown field via serde_json::Value manipulation
     let mut val = serde_json::to_value(&req).unwrap();
-    val.as_object_mut().unwrap().insert("unknown_field".to_string(), serde_json::json!(1));
+    val.as_object_mut()
+        .unwrap()
+        .insert("unknown_field".to_string(), serde_json::json!(1));
     let result = validate_request(&serde_json::to_string(&val).unwrap());
     assert!(result.is_err());
     assert_eq!(result.unwrap_err().code, "MALFORMED_JSON");
@@ -819,7 +922,10 @@ fn val_011_unknown_asset_field() {
     let mut val = serde_json::to_value(&req).unwrap();
     if let Some(assets) = val.get_mut("assets").and_then(|a| a.as_array_mut()) {
         if let Some(first) = assets.first_mut() {
-            first.as_object_mut().unwrap().insert("unknown_asset_field".to_string(), serde_json::json!(1));
+            first
+                .as_object_mut()
+                .unwrap()
+                .insert("unknown_asset_field".to_string(), serde_json::json!(1));
         }
     }
     let result = validate_request(&serde_json::to_string(&val).unwrap());
@@ -832,7 +938,10 @@ fn val_012_unknown_edge_field() {
     let mut val = serde_json::to_value(&make_base_request()).unwrap();
     if let Some(edges) = val.get_mut("network_edges").and_then(|a| a.as_array_mut()) {
         if let Some(first) = edges.first_mut() {
-            first.as_object_mut().unwrap().insert("unknown_edge_field".to_string(), serde_json::json!(1));
+            first
+                .as_object_mut()
+                .unwrap()
+                .insert("unknown_edge_field".to_string(), serde_json::json!(1));
         }
     }
     let result = validate_request(&serde_json::to_string(&val).unwrap());
@@ -843,9 +952,15 @@ fn val_012_unknown_edge_field() {
 #[test]
 fn val_013_unknown_dependency_field() {
     let mut val = serde_json::to_value(&make_base_request()).unwrap();
-    if let Some(deps) = val.get_mut("service_dependencies").and_then(|a| a.as_array_mut()) {
+    if let Some(deps) = val
+        .get_mut("service_dependencies")
+        .and_then(|a| a.as_array_mut())
+    {
         if let Some(first) = deps.first_mut() {
-            first.as_object_mut().unwrap().insert("unknown_dep_field".to_string(), serde_json::json!(1));
+            first
+                .as_object_mut()
+                .unwrap()
+                .insert("unknown_dep_field".to_string(), serde_json::json!(1));
         }
     }
     let result = validate_request(&serde_json::to_string(&val).unwrap());
@@ -941,10 +1056,7 @@ fn val_022_duplicate_asset_id() {
 #[test]
 fn val_023_duplicate_network_edge_id() {
     let mut req = make_base_request();
-    req.network_edges = vec![
-        edge("e1", "A", "B", true),
-        edge("e1", "A", "B", true),
-    ];
+    req.network_edges = vec![edge("e1", "A", "B", true), edge("e1", "A", "B", true)];
     let result = simulate_graph(&req);
     assert!(result.is_err());
     assert_eq!(result.unwrap_err().code, "DUPLICATE_NETWORK_EDGE_ID");
@@ -953,10 +1065,7 @@ fn val_023_duplicate_network_edge_id() {
 #[test]
 fn val_024_duplicate_service_dependency_id() {
     let mut req = make_base_request();
-    req.service_dependencies = vec![
-        dependency("d1", "A", "B"),
-        dependency("d1", "A", "B"),
-    ];
+    req.service_dependencies = vec![dependency("d1", "A", "B"), dependency("d1", "A", "B")];
     let result = simulate_graph(&req);
     assert!(result.is_err());
     assert_eq!(result.unwrap_err().code, "DUPLICATE_SERVICE_DEPENDENCY_ID");
@@ -965,9 +1074,7 @@ fn val_024_duplicate_service_dependency_id() {
 #[test]
 fn val_025_edge_references_unknown_asset() {
     let mut req = make_base_request();
-    req.network_edges = vec![
-        edge("e1", "A", "UNKNOWN", true),
-    ];
+    req.network_edges = vec![edge("e1", "A", "UNKNOWN", true)];
     let result = simulate_graph(&req);
     assert!(result.is_err());
     assert_eq!(result.unwrap_err().code, "UNKNOWN_ASSET_REFERENCE");
@@ -976,9 +1083,7 @@ fn val_025_edge_references_unknown_asset() {
 #[test]
 fn val_026_dependency_references_unknown_asset() {
     let mut req = make_base_request();
-    req.service_dependencies = vec![
-        dependency("d1", "A", "UNKNOWN"),
-    ];
+    req.service_dependencies = vec![dependency("d1", "A", "UNKNOWN")];
     let result = simulate_graph(&req);
     assert!(result.is_err());
     assert_eq!(result.unwrap_err().code, "UNKNOWN_ASSET_REFERENCE");
@@ -987,10 +1092,7 @@ fn val_026_dependency_references_unknown_asset() {
 #[test]
 fn val_027_duplicate_directed_relationship() {
     let mut req = make_base_request();
-    req.network_edges = vec![
-        edge("e1", "A", "B", true),
-        edge("e2", "A", "B", true),
-    ];
+    req.network_edges = vec![edge("e1", "A", "B", true), edge("e2", "A", "B", true)];
     let result = simulate_graph(&req);
     assert!(result.is_err());
     assert_eq!(result.unwrap_err().code, "DUPLICATE_NETWORK_RELATIONSHIP");
@@ -999,9 +1101,7 @@ fn val_027_duplicate_directed_relationship() {
 #[test]
 fn val_028_self_loop_edge() {
     let mut req = make_base_request();
-    req.network_edges = vec![
-        edge("e1", "A", "A", true),
-    ];
+    req.network_edges = vec![edge("e1", "A", "A", true)];
     let result = simulate_graph(&req);
     assert!(result.is_err());
     assert_eq!(result.unwrap_err().code, "SELF_LOOP_NOT_ALLOWED");
@@ -1010,9 +1110,7 @@ fn val_028_self_loop_edge() {
 #[test]
 fn val_029_self_loop_dependency() {
     let mut req = make_base_request();
-    req.service_dependencies = vec![
-        dependency("d1", "A", "A"),
-    ];
+    req.service_dependencies = vec![dependency("d1", "A", "A")];
     let result = simulate_graph(&req);
     assert!(result.is_err());
     assert_eq!(result.unwrap_err().code, "SELF_LOOP_NOT_ALLOWED");
@@ -1021,13 +1119,117 @@ fn val_029_self_loop_dependency() {
 #[test]
 fn val_030_invalid_availability() {
     let mut req = make_base_request();
-    req.assets = vec![
-        asset("A", "degraded"),
-        asset("B", "available"),
-    ];
+    req.assets = vec![asset("A", "degraded"), asset("B", "available")];
     let result = simulate_graph(&req);
     assert!(result.is_err());
     assert_eq!(result.unwrap_err().code, "INVALID_GRAPH");
+}
+
+#[test]
+fn val_039_invalid_asset_id_grammar() {
+    let mut req = make_base_request();
+    req.assets = vec![asset("-invalid_id", "available")];
+    let result = simulate_graph(&req);
+    assert!(result.is_err());
+    assert_eq!(result.unwrap_err().code, "INVALID_GRAPH");
+}
+
+#[test]
+fn val_040_invalid_network_edge_id_grammar() {
+    let mut req = make_base_request();
+    req.network_edges = vec![edge("-invalid_edge", "A", "B", true)];
+    let result = simulate_graph(&req);
+    assert!(result.is_err());
+    assert_eq!(result.unwrap_err().code, "INVALID_GRAPH");
+}
+
+#[test]
+fn val_041_invalid_service_dependency_id_grammar() {
+    let mut req = make_base_request();
+    req.service_dependencies = vec![dependency("-invalid_dep", "A", "B")];
+    let result = simulate_graph(&req);
+    assert!(result.is_err());
+    assert_eq!(result.unwrap_err().code, "INVALID_GRAPH");
+}
+
+#[test]
+fn val_042_missing_availability_field() {
+    let mut val = serde_json::to_value(&make_base_request()).unwrap();
+    if let Some(assets) = val.get_mut("assets").and_then(|a| a.as_array_mut()) {
+        if let Some(first) = assets.first_mut() {
+            first.as_object_mut().unwrap().remove("availability");
+        }
+    }
+    let result = validate_request(&serde_json::to_string(&val).unwrap());
+    assert!(result.is_err());
+    assert_eq!(result.unwrap_err().code, "MALFORMED_JSON");
+}
+
+#[test]
+fn val_043_wrong_availability_type() {
+    let mut val = serde_json::to_value(&make_base_request()).unwrap();
+    if let Some(assets) = val.get_mut("assets").and_then(|a| a.as_array_mut()) {
+        if let Some(first) = assets.first_mut() {
+            first
+                .as_object_mut()
+                .unwrap()
+                .insert("availability".to_string(), serde_json::json!(123));
+        }
+    }
+    let result = validate_request(&serde_json::to_string(&val).unwrap());
+    assert!(result.is_err());
+    assert_eq!(result.unwrap_err().code, "MALFORMED_JSON");
+}
+
+#[test]
+fn val_044_unknown_nested_asset_property() {
+    let mut val = serde_json::to_value(&make_base_request()).unwrap();
+    if let Some(assets) = val.get_mut("assets").and_then(|a| a.as_array_mut()) {
+        if let Some(first) = assets.first_mut() {
+            first
+                .as_object_mut()
+                .unwrap()
+                .insert("unknown_field".to_string(), serde_json::json!(1));
+        }
+    }
+    let result = validate_request(&serde_json::to_string(&val).unwrap());
+    assert!(result.is_err());
+    assert_eq!(result.unwrap_err().code, "MALFORMED_JSON");
+}
+
+#[test]
+fn val_045_unknown_nested_edge_field() {
+    let mut val = serde_json::to_value(&make_base_request()).unwrap();
+    if let Some(edges) = val.get_mut("network_edges").and_then(|a| a.as_array_mut()) {
+        if let Some(first) = edges.first_mut() {
+            first
+                .as_object_mut()
+                .unwrap()
+                .insert("unknown_edge_field".to_string(), serde_json::json!(1));
+        }
+    }
+    let result = validate_request(&serde_json::to_string(&val).unwrap());
+    assert!(result.is_err());
+    assert_eq!(result.unwrap_err().code, "MALFORMED_JSON");
+}
+
+#[test]
+fn val_046_unknown_nested_dependency_field() {
+    let mut val = serde_json::to_value(&make_base_request()).unwrap();
+    if let Some(deps) = val
+        .get_mut("service_dependencies")
+        .and_then(|a| a.as_array_mut())
+    {
+        if let Some(first) = deps.first_mut() {
+            first
+                .as_object_mut()
+                .unwrap()
+                .insert("unknown_dep_field".to_string(), serde_json::json!(1));
+        }
+    }
+    let result = validate_request(&serde_json::to_string(&val).unwrap());
+    assert!(result.is_err());
+    assert_eq!(result.unwrap_err().code, "MALFORMED_JSON");
 }
 
 #[test]
@@ -1040,23 +1242,9 @@ fn val_031_attack_source_references_missing_asset() {
 }
 
 #[test]
-fn val_031b_attack_source_not_in_assets() {
-    let mut req = make_base_request();
-    // Remove asset B but keep attack source referencing B
-    req.assets = vec![asset("A", "available")];
-    req.attack_source_asset_ids = vec!["B".to_string()];
-    let result = simulate_graph(&req);
-    assert!(result.is_err());
-    assert_eq!(result.unwrap_err().code, "UNKNOWN_ASSET_REFERENCE");
-}
-
-#[test]
 fn val_032_attack_source_references_unavailable_asset() {
     let mut req = make_base_request();
-    req.assets = vec![
-        asset("A", "unavailable"),
-        asset("B", "available"),
-    ];
+    req.assets = vec![asset("A", "unavailable"), asset("B", "available")];
     req.attack_source_asset_ids = vec!["A".to_string()];
     let result = simulate_graph(&req);
     assert!(result.is_err());
@@ -1120,7 +1308,11 @@ fn val_036_attack_sources_count_257() {
     sources.push("A0".to_string()); // duplicate source ID
     let req = request(assets, vec![], vec![], sources);
     let result = simulate_graph(&req);
-    assert!(result.is_err(), "Expected LIMIT_EXCEEDED for 257 attack sources: {:?}", result.err());
+    assert!(
+        result.is_err(),
+        "Expected LIMIT_EXCEEDED for 257 attack sources: {:?}",
+        result.err()
+    );
     assert_eq!(result.unwrap_err().code, "LIMIT_EXCEEDED");
 }
 
@@ -1141,7 +1333,11 @@ fn val_037_raw_request_exactly_2mib() {
     }
     assert_eq!(json.len(), target_len);
     let result = validate_request(&json);
-    assert!(result.is_ok(), "Expected 2 MiB request to be accepted: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "Expected 2 MiB request to be accepted: {:?}",
+        result.err()
+    );
 }
 
 #[test]
@@ -1177,7 +1373,11 @@ fn val_047_assets_count_exactly_256() {
         vec!["A0".to_string()],
     );
     let result = simulate_graph(&req);
-    assert!(result.is_ok(), "Expected 256 assets to be accepted: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "Expected 256 assets to be accepted: {:?}",
+        result.err()
+    );
 }
 
 #[test]
@@ -1189,8 +1389,13 @@ fn val_048_network_edges_count_exactly_2048() {
     let mut edges = Vec::new();
     let mut count = 0;
     for i in 0..256 {
-        for j in i+1..256 {
-            edges.push(edge(&format!("e{}", count), &format!("N{}", i), &format!("N{}", j), true));
+        for j in i + 1..256 {
+            edges.push(edge(
+                &format!("e{}", count),
+                &format!("N{}", i),
+                &format!("N{}", j),
+                true,
+            ));
             count += 1;
             if count >= 2048 {
                 break;
@@ -1202,7 +1407,11 @@ fn val_048_network_edges_count_exactly_2048() {
     }
     let req = request(assets, edges, vec![], vec!["N0".to_string()]);
     let result = simulate_graph(&req);
-    assert!(result.is_ok(), "Expected 2048 edges to be accepted: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "Expected 2048 edges to be accepted: {:?}",
+        result.err()
+    );
 }
 
 #[test]
@@ -1214,8 +1423,12 @@ fn val_049_service_dependencies_count_exactly_2048() {
     let mut deps = Vec::new();
     let mut count = 0;
     for i in 0..256 {
-        for j in i+1..256 {
-            deps.push(dependency(&format!("d{}", count), &format!("N{}", i), &format!("N{}", j)));
+        for j in i + 1..256 {
+            deps.push(dependency(
+                &format!("d{}", count),
+                &format!("N{}", i),
+                &format!("N{}", j),
+            ));
             count += 1;
             if count >= 2048 {
                 break;
@@ -1227,7 +1440,11 @@ fn val_049_service_dependencies_count_exactly_2048() {
     }
     let req = request(assets, vec![], deps, vec![]);
     let result = simulate_graph(&req);
-    assert!(result.is_ok(), "Expected 2048 service dependencies to be accepted: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "Expected 2048 service dependencies to be accepted: {:?}",
+        result.err()
+    );
 }
 
 #[test]
@@ -1240,13 +1457,19 @@ fn val_050_attack_sources_count_exactly_256() {
     }
     let req = request(assets, vec![], vec![], sources);
     let result = simulate_graph(&req);
-    assert!(result.is_ok(), "Expected 256 attack sources to be accepted: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "Expected 256 attack sources to be accepted: {:?}",
+        result.err()
+    );
 }
 
 #[test]
 fn val_051_contract_version_is_number() {
     let mut val = serde_json::to_value(&make_base_request()).unwrap();
-    val.as_object_mut().unwrap().insert("contract_version".to_string(), serde_json::json!(123));
+    val.as_object_mut()
+        .unwrap()
+        .insert("contract_version".to_string(), serde_json::json!(123));
     let result = validate_request(&serde_json::to_string(&val).unwrap());
     assert!(result.is_err());
     assert_eq!(result.unwrap_err().code, "MALFORMED_JSON");
@@ -1255,7 +1478,9 @@ fn val_051_contract_version_is_number() {
 #[test]
 fn val_052_request_id_is_number() {
     let mut val = serde_json::to_value(&make_base_request()).unwrap();
-    val.as_object_mut().unwrap().insert("request_id".to_string(), serde_json::json!(123));
+    val.as_object_mut()
+        .unwrap()
+        .insert("request_id".to_string(), serde_json::json!(123));
     let result = validate_request(&serde_json::to_string(&val).unwrap());
     assert!(result.is_err());
     assert_eq!(result.unwrap_err().code, "MALFORMED_JSON");
@@ -1264,15 +1489,13 @@ fn val_052_request_id_is_number() {
 #[test]
 fn val_053_scenario_id_is_number() {
     let mut val = serde_json::to_value(&make_base_request()).unwrap();
-    val.as_object_mut().unwrap().insert("scenario_id".to_string(), serde_json::json!(123));
+    val.as_object_mut()
+        .unwrap()
+        .insert("scenario_id".to_string(), serde_json::json!(123));
     let result = validate_request(&serde_json::to_string(&val).unwrap());
     assert!(result.is_err());
     assert_eq!(result.unwrap_err().code, "MALFORMED_JSON");
 }
-
-// ============================================================================
-// DET-001 through DET-008: Determinism tests
-// ============================================================================
 
 #[test]
 fn det_001_same_input_repeated() {
@@ -1290,7 +1513,11 @@ fn det_001_same_input_repeated() {
 #[test]
 fn det_002_permuted_assets_array() {
     let req1 = request(
-        vec![asset("A", "available"), asset("B", "available"), asset("C", "available")],
+        vec![
+            asset("A", "available"),
+            asset("B", "available"),
+            asset("C", "available"),
+        ],
         vec![edge("e1", "A", "B", true), edge("e2", "B", "C", true)],
         vec![],
         vec!["A".to_string()],
@@ -1314,14 +1541,22 @@ fn det_002_permuted_assets_array() {
 #[test]
 fn det_003_permuted_network_edges_array() {
     let req1 = request(
-        vec![asset("A", "available"), asset("B", "available")],
-        vec![edge("e1", "A", "B", true)],
+        vec![
+            asset("A", "available"),
+            asset("B", "available"),
+            asset("C", "available"),
+        ],
+        vec![edge("e1", "A", "B", true), edge("e2", "B", "C", true)],
         vec![],
         vec!["A".to_string()],
     );
     let req2 = request(
-        vec![asset("A", "available"), asset("B", "available")],
-        vec![edge("e1", "A", "B", true)],
+        vec![
+            asset("A", "available"),
+            asset("B", "available"),
+            asset("C", "available"),
+        ],
+        vec![edge("e2", "B", "C", true), edge("e1", "A", "B", true)],
         vec![],
         vec!["A".to_string()],
     );
@@ -1333,15 +1568,23 @@ fn det_003_permuted_network_edges_array() {
 #[test]
 fn det_004_permuted_service_dependencies_array() {
     let req1 = request(
-        vec![asset("A", "available"), asset("B", "unavailable")],
+        vec![
+            asset("A", "available"),
+            asset("B", "available"),
+            asset("C", "unavailable"),
+        ],
         vec![],
-        vec![dependency("d1", "A", "B")],
+        vec![dependency("d1", "A", "B"), dependency("d2", "B", "C")],
         vec![],
     );
     let req2 = request(
-        vec![asset("A", "available"), asset("B", "unavailable")],
+        vec![
+            asset("A", "available"),
+            asset("B", "available"),
+            asset("C", "unavailable"),
+        ],
         vec![],
-        vec![dependency("d1", "A", "B")],
+        vec![dependency("d2", "B", "C"), dependency("d1", "A", "B")],
         vec![],
     );
     let r1 = simulate_graph(&req1);
@@ -1352,13 +1595,21 @@ fn det_004_permuted_service_dependencies_array() {
 #[test]
 fn det_005_permuted_attack_sources() {
     let req1 = request(
-        vec![asset("A", "available"), asset("B", "available"), asset("C", "available")],
+        vec![
+            asset("A", "available"),
+            asset("B", "available"),
+            asset("C", "available"),
+        ],
         vec![edge("e1", "A", "B", true)],
         vec![],
         vec!["A".to_string(), "C".to_string()],
     );
     let req2 = request(
-        vec![asset("A", "available"), asset("B", "available"), asset("C", "available")],
+        vec![
+            asset("A", "available"),
+            asset("B", "available"),
+            asset("C", "available"),
+        ],
         vec![edge("e1", "A", "B", true)],
         vec![],
         vec!["C".to_string(), "A".to_string()],
@@ -1390,9 +1641,16 @@ fn det_006_equal_length_path_tie_breaking_stable() {
     let r2 = simulate_graph(&req1.clone());
     assert_eq!(r1, r2);
     if let Ok(ref resp) = r1 {
-        let c_witness = resp.network_reachability.witnesses.iter()
-            .find(|w| w.target_asset == "C").unwrap();
-        assert_eq!(c_witness.asset_path, vec!["A".to_string(), "B".to_string(), "C".to_string()]);
+        let c_witness = resp
+            .network_reachability
+            .witnesses
+            .iter()
+            .find(|w| w.target_asset == "C")
+            .unwrap();
+        assert_eq!(
+            c_witness.asset_path,
+            vec!["A".to_string(), "B".to_string(), "C".to_string()]
+        );
     }
 }
 
@@ -1481,10 +1739,7 @@ fn inv_001_one_witness_per_reachable_asset() {
 #[test]
 fn inv_002_witness_target_matches_reachable() {
     let req = request(
-        vec![
-            asset("A", "available"),
-            asset("B", "available"),
-        ],
+        vec![asset("A", "available"), asset("B", "available")],
         vec![edge("e1", "A", "B", true)],
         vec![],
         vec!["A".to_string()],
@@ -1494,8 +1749,11 @@ fn inv_002_witness_target_matches_reachable() {
     if let Ok(resp) = result {
         for w in &resp.network_reachability.witnesses {
             assert!(
-                resp.network_reachability.reachable_asset_ids.contains(&w.target_asset),
-                "Witness target {} not in reachable assets", w.target_asset
+                resp.network_reachability
+                    .reachable_asset_ids
+                    .contains(&w.target_asset),
+                "Witness target {} not in reachable assets",
+                w.target_asset
             );
         }
     }
@@ -1545,7 +1803,8 @@ fn inv_004_reachable_unreachable_disjoint() {
         for r in &resp.network_reachability.reachable_asset_ids {
             assert!(
                 !resp.network_reachability.unreachable_asset_ids.contains(r),
-                "Asset {} is both reachable and unreachable", r
+                "Asset {} is both reachable and unreachable",
+                r
             );
         }
     }
@@ -1557,21 +1816,85 @@ fn inv_005_all_ids_exist_in_request() {
         vec![
             asset("A", "available"),
             asset("B", "available"),
+            asset("C", "available"),
         ],
-        vec![edge("e1", "A", "B", true)],
+        vec![edge("e1", "A", "B", true), edge("e2", "B", "C", true)],
         vec![],
         vec!["A".to_string()],
     );
     let result = simulate_graph(&req);
     assert!(result.is_ok());
     if let Ok(resp) = result {
-        let all_ids: std::collections::HashSet<&str> = req.assets.iter()
-            .map(|a| a.id.as_str()).collect();
+        let all_ids: std::collections::HashSet<&str> =
+            req.assets.iter().map(|a| a.id.as_str()).collect();
+        let edge_ids: std::collections::HashSet<&str> =
+            req.network_edges.iter().map(|e| e.id.as_str()).collect();
+        // All reachable asset IDs exist in request assets
         for r in &resp.network_reachability.reachable_asset_ids {
-            assert!(all_ids.contains(r.as_str()), "Reachable asset {} not in request", r);
+            assert!(
+                all_ids.contains(r.as_str()),
+                "Reachable asset {} not in request assets",
+                r
+            );
         }
+        // All unreachable asset IDs exist in request assets
         for r in &resp.network_reachability.unreachable_asset_ids {
-            assert!(all_ids.contains(r.as_str()), "Unreachable asset {} not in request", r);
+            assert!(
+                all_ids.contains(r.as_str()),
+                "Unreachable asset {} not in request assets",
+                r
+            );
+        }
+        // All witness targets exist in request assets
+        for w in &resp.network_reachability.witnesses {
+            assert!(
+                all_ids.contains(w.target_asset.as_str()),
+                "Witness target {} not in request assets",
+                w.target_asset
+            );
+            assert!(
+                all_ids.contains(w.source_asset.as_str()),
+                "Witness source {} not in request assets",
+                w.source_asset
+            );
+            // All asset path IDs exist in request assets
+            for aid in &w.asset_path {
+                assert!(
+                    all_ids.contains(aid.as_str()),
+                    "Asset path asset {} not in request assets",
+                    aid
+                );
+            }
+            // All edge path IDs exist in request edges
+            for eid in &w.edge_path {
+                assert!(
+                    edge_ids.contains(eid.as_str()),
+                    "Edge path edge {} not in request edges",
+                    eid
+                );
+            }
+        }
+        // All unavailable service IDs exist in request assets
+        for s in &resp.service_impact.initially_unavailable_asset_ids {
+            assert!(
+                all_ids.contains(s.as_str()),
+                "Initially unavailable asset {} not in request assets",
+                s
+            );
+        }
+        for s in &resp.service_impact.impacted_dependent_asset_ids {
+            assert!(
+                all_ids.contains(s.as_str()),
+                "Impacted asset {} not in request assets",
+                s
+            );
+        }
+        for s in &resp.service_impact.unavailable_asset_ids {
+            assert!(
+                all_ids.contains(s.as_str()),
+                "Unavailable asset {} not in request assets",
+                s
+            );
         }
     }
 }
@@ -1595,7 +1918,54 @@ fn inv_006_arrays_sorted_and_unique() {
         let mut sorted = reachable.clone();
         sorted.sort();
         sorted.dedup();
-        assert_eq!(*reachable, sorted, "Reachable assets should be sorted and unique");
+        assert_eq!(
+            *reachable, sorted,
+            "Reachable assets should be sorted and unique"
+        );
+        // All unreachable asset IDs sorted and unique
+        let unreachable = &resp.network_reachability.unreachable_asset_ids;
+        let mut sorted_u = unreachable.clone();
+        sorted_u.sort();
+        sorted_u.dedup();
+        assert_eq!(
+            *unreachable, sorted_u,
+            "Unreachable assets should be sorted and unique"
+        );
+        // All witnesses sorted by target asset
+        let witnesses = &resp.network_reachability.witnesses;
+        let mut sorted_w = witnesses.clone();
+        sorted_w.sort_by(|a, b| a.target_asset.cmp(&b.target_asset));
+        assert_eq!(
+            *witnesses, sorted_w,
+            "Witnesses should be sorted by target asset"
+        );
+        // All initially unavailable asset IDs sorted and unique
+        let init_unavail = &resp.service_impact.initially_unavailable_asset_ids;
+        let mut sorted_i = init_unavail.clone();
+        sorted_i.sort();
+        sorted_i.dedup();
+        assert_eq!(
+            *init_unavail, sorted_i,
+            "Initially unavailable assets should be sorted and unique"
+        );
+        // All impacted dependent asset IDs sorted and unique
+        let impacted = &resp.service_impact.impacted_dependent_asset_ids;
+        let mut sorted_im = impacted.clone();
+        sorted_im.sort();
+        sorted_im.dedup();
+        assert_eq!(
+            *impacted, sorted_im,
+            "Impacted assets should be sorted and unique"
+        );
+        // All unavailable asset IDs sorted and unique
+        let unavailable = &resp.service_impact.unavailable_asset_ids;
+        let mut sorted_u = unavailable.clone();
+        sorted_u.sort();
+        sorted_u.dedup();
+        assert_eq!(
+            *unavailable, sorted_u,
+            "Unavailable assets should be sorted and unique"
+        );
     }
 }
 

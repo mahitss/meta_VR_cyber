@@ -7,7 +7,7 @@
 
 use serde_json::Value;
 
-use crate::graph_models::{CONTRACT_VERSION, validate_request_id, validate_resource_id};
+use crate::graph_models::{validate_request_id, validate_resource_id, CONTRACT_VERSION};
 
 /// Maximum raw serialized request size in bytes (2 MiB).
 pub const MAX_REQUEST_BYTES: usize = 2_097_152;
@@ -151,7 +151,7 @@ pub fn validate_request(raw: &str) -> Result<Value, ValidationError> {
         }
     }
 
-    // Stage 6: Validate structural JSON types at top level.
+    // Stage 6: Validate structural JSON types at all object levels.
     if !obj["contract_version"].is_string() {
         return Err(ValidationError::new(
             codes::MALFORMED_JSON,
@@ -195,6 +195,94 @@ pub fn validate_request(raw: &str) -> Result<Value, ValidationError> {
         ));
     }
 
+    // Extract arrays for nested validation.
+    let assets = obj["assets"].as_array().unwrap();
+    let network_edges = obj["network_edges"].as_array().unwrap();
+    let service_dependencies = obj["service_dependencies"].as_array().unwrap();
+    let attack_sources = obj["attack_source_asset_ids"].as_array().unwrap();
+
+    // Validate structural types within each asset object.
+    for (i, asset) in assets.iter().enumerate() {
+        let a = asset.as_object().unwrap();
+        if a.get("id").map_or(false, |v| !v.is_string())
+            || a.get("availability").map_or(false, |v| !v.is_string())
+        {
+            return Err(ValidationError::new(
+                codes::MALFORMED_JSON,
+                &format!("asset at index {} has invalid field types", i),
+            ));
+        }
+        // Check unknown fields within asset object
+        for key in a.keys() {
+            if !ALLOWED_ASSET_FIELDS.contains(&key.as_str()) {
+                return Err(ValidationError::new(
+                    codes::MALFORMED_JSON,
+                    &format!("asset at index {} has unknown field: {}", i, key),
+                ));
+            }
+        }
+    }
+
+    // Validate structural types within each edge object.
+    for (i, edge) in network_edges.iter().enumerate() {
+        let e = edge.as_object().unwrap();
+        if !e["id"].is_string()
+            || !e["source_asset_id"].is_string()
+            || !e["target_asset_id"].is_string()
+            || !e["enabled"].is_boolean()
+        {
+            return Err(ValidationError::new(
+                codes::MALFORMED_JSON,
+                &format!("network edge at index {} has invalid field types", i),
+            ));
+        }
+        // Check unknown fields within edge object
+        for key in e.keys() {
+            if !ALLOWED_EDGE_FIELDS.contains(&key.as_str()) {
+                return Err(ValidationError::new(
+                    codes::MALFORMED_JSON,
+                    &format!("network edge at index {} has unknown field: {}", i, key),
+                ));
+            }
+        }
+    }
+
+    // Validate structural types within each dependency object.
+    for (i, dep) in service_dependencies.iter().enumerate() {
+        let d = dep.as_object().unwrap();
+        if !d["id"].is_string()
+            || !d["dependent_asset_id"].is_string()
+            || !d["dependency_asset_id"].is_string()
+        {
+            return Err(ValidationError::new(
+                codes::MALFORMED_JSON,
+                &format!("service dependency at index {} has invalid field types", i),
+            ));
+        }
+        // Check unknown fields within dependency object
+        for key in d.keys() {
+            if !ALLOWED_DEPENDENCY_FIELDS.contains(&key.as_str()) {
+                return Err(ValidationError::new(
+                    codes::MALFORMED_JSON,
+                    &format!(
+                        "service dependency at index {} has unknown field: {}",
+                        i, key
+                    ),
+                ));
+            }
+        }
+    }
+
+    // Validate structural types of attack source array elements.
+    for (i, source_id) in attack_sources.iter().enumerate() {
+        if !source_id.is_string() {
+            return Err(ValidationError::new(
+                codes::MALFORMED_JSON,
+                &format!("attack_source_asset_ids at index {} is not a string", i),
+            ));
+        }
+    }
+
     // Stage 7: Validate contract version.
     let contract_version = obj["contract_version"].as_str().unwrap();
     if contract_version != CONTRACT_VERSION {
@@ -230,11 +318,6 @@ pub fn validate_request(raw: &str) -> Result<Value, ValidationError> {
     }
 
     // Stage 10: Enforce collection size limits.
-    let assets = obj["assets"].as_array().unwrap();
-    let network_edges = obj["network_edges"].as_array().unwrap();
-    let service_dependencies = obj["service_dependencies"].as_array().unwrap();
-    let attack_sources = obj["attack_source_asset_ids"].as_array().unwrap();
-
     if assets.len() > MAX_ASSETS {
         return Err(ValidationError::new(
             codes::LIMIT_EXCEEDED,
@@ -273,33 +356,29 @@ pub fn validate_request(raw: &str) -> Result<Value, ValidationError> {
     for (i, asset) in assets.iter().enumerate() {
         let a = asset.as_object().unwrap();
         let id = a["id"].as_str().unwrap();
-        let availability = a["availability"].as_str().unwrap();
         if !validate_resource_id(id) {
             return Err(ValidationError::new(
                 codes::INVALID_GRAPH,
                 &format!(
-                    "asset has invalid id '{}': must start with alphanumeric and contain only alphanumeric, '.', '_', ':', or '-', max 64 characters",
-                    id
+                    "asset at index {} has invalid id '{}': must start with alphanumeric and contain only alphanumeric, '.', '_', ':', or '-', max 64 characters",
+                    i, id
                 ),
             ));
         }
+        let availability = match a.get("availability") {
+            Some(Value::String(s)) => s.to_string(),
+            _ => {
+                return Err(ValidationError::new(
+                    codes::MALFORMED_JSON,
+                    &format!("asset at index {} field 'availability' must be a string", i),
+                ));
+            }
+        };
         if availability != "available" && availability != "unavailable" {
             return Err(ValidationError::new(
                 codes::INVALID_GRAPH,
-                &format!(
-                    "asset '{}' has invalid availability '{}', expected 'available' or 'unavailable'",
-                    id, availability
-                ),
+                &format!("asset '{}' has invalid availability '{}'", id, availability),
             ));
-        }
-        // Check unknown fields within asset object
-        for key in a.keys() {
-            if !ALLOWED_ASSET_FIELDS.contains(&key.as_str()) {
-                return Err(ValidationError::new(
-                    codes::MALFORMED_JSON,
-                    &format!("asset at index {} has unknown field: {}", i, key),
-                ));
-            }
         }
     }
 
@@ -309,20 +388,8 @@ pub fn validate_request(raw: &str) -> Result<Value, ValidationError> {
         if !validate_resource_id(id) {
             return Err(ValidationError::new(
                 codes::INVALID_GRAPH,
-                &format!(
-                    "network edge at index {} has invalid id '{}'",
-                    i, id
-                ),
+                &format!("network edge at index {} has invalid id '{}'", i, id),
             ));
-        }
-        // Check unknown fields within edge object
-        for key in e.keys() {
-            if !ALLOWED_EDGE_FIELDS.contains(&key.as_str()) {
-                return Err(ValidationError::new(
-                    codes::MALFORMED_JSON,
-                    &format!("network edge at index {} has unknown field: {}", i, key),
-                ));
-            }
         }
     }
 
@@ -332,31 +399,7 @@ pub fn validate_request(raw: &str) -> Result<Value, ValidationError> {
         if !validate_resource_id(id) {
             return Err(ValidationError::new(
                 codes::INVALID_GRAPH,
-                &format!(
-                    "service dependency at index {} has invalid id '{}'",
-                    i, id
-                ),
-            ));
-        }
-        // Check unknown fields within dependency object
-        for key in d.keys() {
-            if !ALLOWED_DEPENDENCY_FIELDS.contains(&key.as_str()) {
-                return Err(ValidationError::new(
-                    codes::MALFORMED_JSON,
-                    &format!(
-                        "service dependency at index {} has unknown field: {}",
-                        i, key
-                    ),
-                ));
-            }
-        }
-    }
-
-    for (i, source_id) in attack_sources.iter().enumerate() {
-        if !source_id.is_string() {
-            return Err(ValidationError::new(
-                codes::MALFORMED_JSON,
-                &format!("attack_source_asset_ids at index {} is not a string", i),
+                &format!("service dependency at index {} has invalid id '{}'", i, id),
             ));
         }
     }
@@ -406,10 +449,7 @@ pub fn validate_request(raw: &str) -> Result<Value, ValidationError> {
         if !network_relationships.insert(key) {
             return Err(ValidationError::new(
                 codes::DUPLICATE_NETWORK_RELATIONSHIP,
-                &format!(
-                    "duplicate network relationship: {} -> {}",
-                    key.0, key.1
-                ),
+                &format!("duplicate network relationship: {} -> {}", key.0, key.1),
             ));
         }
     }
@@ -451,25 +491,25 @@ pub fn validate_request(raw: &str) -> Result<Value, ValidationError> {
 
     for edge in network_edges.iter() {
         let e = edge.as_object().unwrap();
-        let src = e["source_asset_id"].as_str().unwrap();
-        let dst = e["target_asset_id"].as_str().unwrap();
-        if !asset_id_set.contains(src) {
+        let source_asset_id = e["source_asset_id"].as_str().unwrap();
+        let dest_id = e["target_asset_id"].as_str().unwrap();
+        if !asset_id_set.contains(source_asset_id) {
             return Err(ValidationError::new(
                 codes::UNKNOWN_ASSET_REFERENCE,
                 &format!(
                     "network edge '{}' references unknown source asset '{}'",
                     e["id"].as_str().unwrap(),
-                    src
+                    source_asset_id
                 ),
             ));
         }
-        if !asset_id_set.contains(dst) {
+        if !asset_id_set.contains(dest_id) {
             return Err(ValidationError::new(
                 codes::UNKNOWN_ASSET_REFERENCE,
                 &format!(
                     "network edge '{}' references unknown target asset '{}'",
                     e["id"].as_str().unwrap(),
-                    dst
+                    dest_id
                 ),
             ));
         }
@@ -507,10 +547,7 @@ pub fn validate_request(raw: &str) -> Result<Value, ValidationError> {
         if !asset_id_set.contains(sid) {
             return Err(ValidationError::new(
                 codes::UNKNOWN_ASSET_REFERENCE,
-                &format!(
-                    "attack source '{}' references unknown asset",
-                    sid
-                ),
+                &format!("attack source '{}' references unknown asset", sid),
             ));
         }
     }
@@ -548,20 +585,20 @@ pub fn validate_request(raw: &str) -> Result<Value, ValidationError> {
         .iter()
         .map(|a| {
             let a = a.as_object().unwrap();
-            (a["id"].as_str().unwrap(), a["availability"].as_str().unwrap())
+            (
+                a["id"].as_str().unwrap(),
+                a["availability"].as_str().unwrap(),
+            )
         })
         .collect();
 
     for source in attack_sources.iter() {
-        let id = source.as_str().unwrap();
-        if let Some(avail) = availability.get(id) {
+        let sid = source.as_str().unwrap();
+        if let Some(avail) = availability.get(sid) {
             if *avail == "unavailable" {
                 return Err(ValidationError::new(
                     codes::SOURCE_ASSET_UNAVAILABLE,
-                    &format!(
-                        "attack source asset '{}' is unavailable",
-                        id
-                    ),
+                    &format!("attack source asset '{}' is unavailable", sid),
                 ));
             }
         }
@@ -571,7 +608,9 @@ pub fn validate_request(raw: &str) -> Result<Value, ValidationError> {
 }
 
 /// Deserialize the validated `serde_json::Value` into typed request models.
-pub fn deserialize_request(value: Value) -> Result<crate::graph_models::GraphSimulationRequest, ValidationError> {
+pub fn deserialize_request(
+    value: Value,
+) -> Result<crate::graph_models::GraphSimulationRequest, ValidationError> {
     serde_json::from_value(value).map_err(|e| {
         ValidationError::new(
             codes::MALFORMED_JSON,
