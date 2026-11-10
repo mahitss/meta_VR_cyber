@@ -1108,20 +1108,19 @@ fn val_035_service_dependencies_count_2049() {
 
 #[test]
 fn val_036_attack_sources_count_257() {
-    let mut sources = Vec::new();
-    for i in 0..257 {
-        sources.push(format!("A{}", i));
-    }
-    let mut req = make_base_request();
-    // Need 257 distinct assets first
+    // 256 distinct assets (A0-A255), 257 attack source IDs (A0-A255 + duplicate "A0")
     let mut assets = Vec::new();
-    for i in 0..257 {
+    for i in 0..256 {
         assets.push(asset(&format!("A{}", i), "available"));
     }
-    req.assets = assets;
-    req.attack_source_asset_ids = sources;
+    let mut sources = Vec::new();
+    for i in 0..256 {
+        sources.push(format!("A{}", i));
+    }
+    sources.push("A0".to_string()); // duplicate source ID
+    let req = request(assets, vec![], vec![], sources);
     let result = simulate_graph(&req);
-    assert!(result.is_err());
+    assert!(result.is_err(), "Expected LIMIT_EXCEEDED for 257 attack sources: {:?}", result.err());
     assert_eq!(result.unwrap_err().code, "LIMIT_EXCEEDED");
 }
 

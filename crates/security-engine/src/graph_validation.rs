@@ -131,7 +131,7 @@ pub fn validate_request(raw: &str) -> Result<Value, ValidationError> {
 
     let obj = value.as_object().unwrap();
 
-    // Stage 4: Check required fields are present.
+    // Stage 4: Check required fields at top level.
     for field in REQUIRED_TOP_LEVEL_FIELDS {
         if !obj.contains_key(*field) {
             return Err(ValidationError::new(
@@ -141,7 +141,7 @@ pub fn validate_request(raw: &str) -> Result<Value, ValidationError> {
         }
     }
 
-    // Stage 5: Check unknown fields.
+    // Stage 5: Check unknown fields at top level.
     for key in obj.keys() {
         if !ALLOWED_TOP_LEVEL_FIELDS.contains(&key.as_str()) {
             return Err(ValidationError::new(
@@ -151,7 +151,7 @@ pub fn validate_request(raw: &str) -> Result<Value, ValidationError> {
         }
     }
 
-    // Stage 6: Validate structural JSON types of all fields.
+    // Stage 6: Validate structural JSON types at top level.
     if !obj["contract_version"].is_string() {
         return Err(ValidationError::new(
             codes::MALFORMED_JSON,
@@ -271,52 +271,15 @@ pub fn validate_request(raw: &str) -> Result<Value, ValidationError> {
 
     // Stage 11: Validate resource identifiers and availability values.
     for (i, asset) in assets.iter().enumerate() {
-        if !asset.is_object() {
-            return Err(ValidationError::new(
-                codes::MALFORMED_JSON,
-                &format!("asset at index {} is not an object", i),
-            ));
-        }
         let a = asset.as_object().unwrap();
-        // Check required fields
-        for field in REQUIRED_ASSET_FIELDS {
-            if !a.contains_key(*field) {
-                return Err(ValidationError::new(
-                    codes::MALFORMED_JSON,
-                    &format!("asset at index {} missing required field: {}", i, field),
-                ));
-            }
-        }
-        // Check unknown fields
-        for key in a.keys() {
-            if !ALLOWED_ASSET_FIELDS.contains(&key.as_str()) {
-                return Err(ValidationError::new(
-                    codes::MALFORMED_JSON,
-                    &format!("asset at index {} has unknown field: {}", i, key),
-                ));
-            }
-        }
-        // Validate types
-        if !a["id"].is_string() {
-            return Err(ValidationError::new(
-                codes::MALFORMED_JSON,
-                &format!("asset at index {} field 'id' must be a string", i),
-            ));
-        }
-        if !a["availability"].is_string() {
-            return Err(ValidationError::new(
-                codes::MALFORMED_JSON,
-                &format!("asset at index {} field 'availability' must be a string", i),
-            ));
-        }
         let id = a["id"].as_str().unwrap();
         let availability = a["availability"].as_str().unwrap();
         if !validate_resource_id(id) {
             return Err(ValidationError::new(
                 codes::INVALID_GRAPH,
                 &format!(
-                    "asset at index {} has invalid id '{}': must start with alphanumeric and contain only alphanumeric, '.', '_', ':', or '-', max 64 characters",
-                    i, id
+                    "asset has invalid id '{}': must start with alphanumeric and contain only alphanumeric, '.', '_', ':', or '-', max 64 characters",
+                    id
                 ),
             ));
         }
@@ -329,45 +292,19 @@ pub fn validate_request(raw: &str) -> Result<Value, ValidationError> {
                 ),
             ));
         }
+        // Check unknown fields within asset object
+        for key in a.keys() {
+            if !ALLOWED_ASSET_FIELDS.contains(&key.as_str()) {
+                return Err(ValidationError::new(
+                    codes::MALFORMED_JSON,
+                    &format!("asset at index {} has unknown field: {}", i, key),
+                ));
+            }
+        }
     }
 
     for (i, edge) in network_edges.iter().enumerate() {
-        if !edge.is_object() {
-            return Err(ValidationError::new(
-                codes::MALFORMED_JSON,
-                &format!("network edge at index {} is not an object", i),
-            ));
-        }
         let e = edge.as_object().unwrap();
-        for field in REQUIRED_EDGE_FIELDS {
-            if !e.contains_key(*field) {
-                return Err(ValidationError::new(
-                    codes::MALFORMED_JSON,
-                    &format!(
-                        "network edge at index {} missing required field: {}",
-                        i, field
-                    ),
-                ));
-            }
-        }
-        for key in e.keys() {
-            if !ALLOWED_EDGE_FIELDS.contains(&key.as_str()) {
-                return Err(ValidationError::new(
-                    codes::MALFORMED_JSON,
-                    &format!("network edge at index {} has unknown field: {}", i, key),
-                ));
-            }
-        }
-        if !e["id"].is_string()
-            || !e["source_asset_id"].is_string()
-            || !e["target_asset_id"].is_string()
-            || !e["enabled"].is_boolean()
-        {
-            return Err(ValidationError::new(
-                codes::MALFORMED_JSON,
-                &format!("network edge at index {} has invalid field types", i),
-            ));
-        }
         let id = e["id"].as_str().unwrap();
         if !validate_resource_id(id) {
             return Err(ValidationError::new(
@@ -378,44 +315,19 @@ pub fn validate_request(raw: &str) -> Result<Value, ValidationError> {
                 ),
             ));
         }
+        // Check unknown fields within edge object
+        for key in e.keys() {
+            if !ALLOWED_EDGE_FIELDS.contains(&key.as_str()) {
+                return Err(ValidationError::new(
+                    codes::MALFORMED_JSON,
+                    &format!("network edge at index {} has unknown field: {}", i, key),
+                ));
+            }
+        }
     }
 
     for (i, dep) in service_dependencies.iter().enumerate() {
-        if !dep.is_object() {
-            return Err(ValidationError::new(
-                codes::MALFORMED_JSON,
-                &format!("service dependency at index {} is not an object", i),
-            ));
-        }
         let d = dep.as_object().unwrap();
-        for field in REQUIRED_DEPENDENCY_FIELDS {
-            if !d.contains_key(*field) {
-                return Err(ValidationError::new(
-                    codes::MALFORMED_JSON,
-                    &format!(
-                        "service dependency at index {} missing required field: {}",
-                        i, field
-                    ),
-                ));
-            }
-        }
-        for key in d.keys() {
-            if !ALLOWED_DEPENDENCY_FIELDS.contains(&key.as_str()) {
-                return Err(ValidationError::new(
-                    codes::MALFORMED_JSON,
-                    &format!("service dependency at index {} has unknown field: {}", i, key),
-                ));
-            }
-        }
-        if !d["id"].is_string()
-            || !d["dependent_asset_id"].is_string()
-            || !d["dependency_asset_id"].is_string()
-        {
-            return Err(ValidationError::new(
-                codes::MALFORMED_JSON,
-                &format!("service dependency at index {} has invalid field types", i),
-            ));
-        }
         let id = d["id"].as_str().unwrap();
         if !validate_resource_id(id) {
             return Err(ValidationError::new(
@@ -425,6 +337,18 @@ pub fn validate_request(raw: &str) -> Result<Value, ValidationError> {
                     i, id
                 ),
             ));
+        }
+        // Check unknown fields within dependency object
+        for key in d.keys() {
+            if !ALLOWED_DEPENDENCY_FIELDS.contains(&key.as_str()) {
+                return Err(ValidationError::new(
+                    codes::MALFORMED_JSON,
+                    &format!(
+                        "service dependency at index {} has unknown field: {}",
+                        i, key
+                    ),
+                ));
+            }
         }
     }
 
