@@ -100,6 +100,56 @@ impl ValidationError {
     }
 }
 
+/// Check required fields in a JSON object, returning the first missing field.
+fn check_required_fields(obj: &serde_json::Map<String, Value>, fields: &[&str]) -> Option<String> {
+    for field in fields {
+        if !obj.contains_key(*field) {
+            return Some(format!("missing required field: {}", field));
+        }
+    }
+    None
+}
+
+/// Check unknown fields in a JSON object, returning the first unknown field.
+fn check_unknown_fields(obj: &serde_json::Map<String, Value>, allowed: &[&str]) -> Option<String> {
+    for key in obj.keys() {
+        if !allowed.contains(&key.as_str()) {
+            return Some(format!("unknown field: {}", key));
+        }
+    }
+    None
+}
+
+/// Extract an array from an object field, safely returning an error if missing
+/// or not an array.
+fn extract_array<'a>(
+    obj: &'a serde_json::Map<String, Value>,
+    field: &str,
+) -> Result<&'a [Value], ValidationError> {
+    match obj.get(field) {
+        Some(Value::Array(arr)) => Ok(arr),
+        _ => Err(ValidationError::new(
+            codes::MALFORMED_JSON,
+            &format!("field '{}' must be an array", field),
+        )),
+    }
+}
+
+/// Extract an object from a Value, safely returning an error if not an object.
+fn extract_object<'a>(
+    v: &'a Value,
+    index: usize,
+    context: &str,
+) -> Result<&'a serde_json::Map<String, Value>, ValidationError> {
+    match v {
+        Value::Object(map) => Ok(map),
+        _ => Err(ValidationError::new(
+            codes::MALFORMED_JSON,
+            &format!("{} at index {} must be an object", context, index),
+        )),
+    }
+}
+
 /// Result of validating a raw request string.
 ///
 /// Returns the parsed `serde_json::Value` on success, or a `ValidationError`
@@ -122,153 +172,189 @@ pub fn validate_request(raw: &str) -> Result<Value, ValidationError> {
     })?;
 
     // Stage 3: Validate that the root is a JSON object.
-    if !value.is_object() {
-        return Err(ValidationError::new(
-            codes::MALFORMED_JSON,
-            "request body must be a JSON object",
-        ));
-    }
-
-    let obj = value.as_object().unwrap();
-
-    // Stage 4: Check required fields at top level.
-    for field in REQUIRED_TOP_LEVEL_FIELDS {
-        if !obj.contains_key(*field) {
+    let obj = match &value {
+        Value::Object(map) => map,
+        _ => {
             return Err(ValidationError::new(
                 codes::MALFORMED_JSON,
-                &format!("missing required field: {}", field),
+                "request body must be a JSON object",
+            ));
+        }
+    };
+
+    // Stage 4: Check required fields at all object levels.
+    if let Some(msg) = check_required_fields(obj, REQUIRED_TOP_LEVEL_FIELDS) {
+        return Err(ValidationError::new(codes::MALFORMED_JSON, &msg));
+    }
+
+    // Extract arrays for nested validation.
+    let assets = extract_array(obj, "assets")?;
+    let network_edges = extract_array(obj, "network_edges")?;
+    let service_dependencies = extract_array(obj, "service_dependencies")?;
+    let attack_sources = extract_array(obj, "attack_source_asset_ids")?;
+
+    // Validate required fields within each asset object.
+    for (i, asset) in assets.iter().enumerate() {
+        let a = extract_object(asset, i, "asset")?;
+        if let Some(msg) = check_required_fields(a, REQUIRED_ASSET_FIELDS) {
+            return Err(ValidationError::new(
+                codes::MALFORMED_JSON,
+                &format!("asset at index {}: {}", i, msg),
             ));
         }
     }
 
-    // Stage 5: Check unknown fields at top level.
-    for key in obj.keys() {
-        if !ALLOWED_TOP_LEVEL_FIELDS.contains(&key.as_str()) {
+    // Validate required fields within each edge object.
+    for (i, edge) in network_edges.iter().enumerate() {
+        let e = extract_object(edge, i, "network edge")?;
+        if let Some(msg) = check_required_fields(e, REQUIRED_EDGE_FIELDS) {
             return Err(ValidationError::new(
                 codes::MALFORMED_JSON,
-                &format!("unknown field: {}", key),
+                &format!("network edge at index {}: {}", i, msg),
+            ));
+        }
+    }
+
+    // Validate required fields within each dependency object.
+    for (i, dep) in service_dependencies.iter().enumerate() {
+        let d = extract_object(dep, i, "service dependency")?;
+        if let Some(msg) = check_required_fields(d, REQUIRED_DEPENDENCY_FIELDS) {
+            return Err(ValidationError::new(
+                codes::MALFORMED_JSON,
+                &format!("service dependency at index {}: {}", i, msg),
+            ));
+        }
+    }
+
+    // Stage 5: Check unknown fields at all object levels.
+    if let Some(msg) = check_unknown_fields(obj, ALLOWED_TOP_LEVEL_FIELDS) {
+        return Err(ValidationError::new(codes::MALFORMED_JSON, &msg));
+    }
+
+    // Check unknown fields within each asset object.
+    for (i, asset) in assets.iter().enumerate() {
+        let a = extract_object(asset, i, "asset")?;
+        if let Some(msg) = check_unknown_fields(a, ALLOWED_ASSET_FIELDS) {
+            return Err(ValidationError::new(
+                codes::MALFORMED_JSON,
+                &format!("asset at index {}: {}", i, msg),
+            ));
+        }
+    }
+
+    // Check unknown fields within each edge object.
+    for (i, edge) in network_edges.iter().enumerate() {
+        let e = extract_object(edge, i, "network edge")?;
+        if let Some(msg) = check_unknown_fields(e, ALLOWED_EDGE_FIELDS) {
+            return Err(ValidationError::new(
+                codes::MALFORMED_JSON,
+                &format!("network edge at index {}: {}", i, msg),
+            ));
+        }
+    }
+
+    // Check unknown fields within each dependency object.
+    for (i, dep) in service_dependencies.iter().enumerate() {
+        let d = extract_object(dep, i, "service dependency")?;
+        if let Some(msg) = check_unknown_fields(d, ALLOWED_DEPENDENCY_FIELDS) {
+            return Err(ValidationError::new(
+                codes::MALFORMED_JSON,
+                &format!("service dependency at index {}: {}", i, msg),
             ));
         }
     }
 
     // Stage 6: Validate structural JSON types at all object levels.
-    if !obj["contract_version"].is_string() {
-        return Err(ValidationError::new(
-            codes::MALFORMED_JSON,
-            "field 'contract_version' must be a string",
-        ));
+    // Top-level fields.
+    for field in REQUIRED_TOP_LEVEL_FIELDS {
+        match obj.get(*field) {
+            Some(Value::String(_))
+                if ["contract_version", "request_id", "scenario_id"].contains(field) => {}
+            Some(Value::Array(_))
+                if [
+                    "assets",
+                    "network_edges",
+                    "service_dependencies",
+                    "attack_source_asset_ids",
+                ]
+                .contains(field) => {}
+            Some(_) => {
+                return Err(ValidationError::new(
+                    codes::MALFORMED_JSON,
+                    &format!("field '{}' has invalid type", field),
+                ));
+            }
+            None => {
+                // Already caught by Stage 4 required-field check.
+            }
+        }
     }
-    if !obj["request_id"].is_string() {
-        return Err(ValidationError::new(
-            codes::MALFORMED_JSON,
-            "field 'request_id' must be a string",
-        ));
-    }
-    if !obj["scenario_id"].is_string() {
-        return Err(ValidationError::new(
-            codes::MALFORMED_JSON,
-            "field 'scenario_id' must be a string",
-        ));
-    }
-    if !obj["assets"].is_array() {
-        return Err(ValidationError::new(
-            codes::MALFORMED_JSON,
-            "field 'assets' must be an array",
-        ));
-    }
-    if !obj["network_edges"].is_array() {
-        return Err(ValidationError::new(
-            codes::MALFORMED_JSON,
-            "field 'network_edges' must be an array",
-        ));
-    }
-    if !obj["service_dependencies"].is_array() {
-        return Err(ValidationError::new(
-            codes::MALFORMED_JSON,
-            "field 'service_dependencies' must be an array",
-        ));
-    }
-    if !obj["attack_source_asset_ids"].is_array() {
-        return Err(ValidationError::new(
-            codes::MALFORMED_JSON,
-            "field 'attack_source_asset_ids' must be an array",
-        ));
-    }
-
-    // Extract arrays for nested validation.
-    let assets = obj["assets"].as_array().unwrap();
-    let network_edges = obj["network_edges"].as_array().unwrap();
-    let service_dependencies = obj["service_dependencies"].as_array().unwrap();
-    let attack_sources = obj["attack_source_asset_ids"].as_array().unwrap();
 
     // Validate structural types within each asset object.
     for (i, asset) in assets.iter().enumerate() {
-        let a = asset.as_object().unwrap();
-        if a.get("id").map_or(false, |v| !v.is_string())
-            || a.get("availability").map_or(false, |v| !v.is_string())
-        {
-            return Err(ValidationError::new(
-                codes::MALFORMED_JSON,
-                &format!("asset at index {} has invalid field types", i),
-            ));
-        }
-        // Check unknown fields within asset object
-        for key in a.keys() {
-            if !ALLOWED_ASSET_FIELDS.contains(&key.as_str()) {
-                return Err(ValidationError::new(
-                    codes::MALFORMED_JSON,
-                    &format!("asset at index {} has unknown field: {}", i, key),
-                ));
+        let a = extract_object(asset, i, "asset")?;
+        for field in REQUIRED_ASSET_FIELDS {
+            match a.get(*field) {
+                Some(Value::String(_)) => {}
+                Some(_) => {
+                    return Err(ValidationError::new(
+                        codes::MALFORMED_JSON,
+                        &format!("asset at index {} field '{}' must be a string", i, field),
+                    ));
+                }
+                None => {
+                    // Already caught by Stage 4 required-field check.
+                }
             }
         }
     }
 
     // Validate structural types within each edge object.
     for (i, edge) in network_edges.iter().enumerate() {
-        let e = edge.as_object().unwrap();
-        if !e["id"].is_string()
-            || !e["source_asset_id"].is_string()
-            || !e["target_asset_id"].is_string()
-            || !e["enabled"].is_boolean()
-        {
-            return Err(ValidationError::new(
-                codes::MALFORMED_JSON,
-                &format!("network edge at index {} has invalid field types", i),
-            ));
-        }
-        // Check unknown fields within edge object
-        for key in e.keys() {
-            if !ALLOWED_EDGE_FIELDS.contains(&key.as_str()) {
-                return Err(ValidationError::new(
-                    codes::MALFORMED_JSON,
-                    &format!("network edge at index {} has unknown field: {}", i, key),
-                ));
+        let e = extract_object(edge, i, "network edge")?;
+        for field in REQUIRED_EDGE_FIELDS {
+            match e.get(*field) {
+                Some(Value::String(_)) if *field != "enabled" => {}
+                Some(Value::Bool(_)) if *field == "enabled" => {}
+                Some(_) => {
+                    let expected = if *field == "enabled" {
+                        "boolean"
+                    } else {
+                        "string"
+                    };
+                    return Err(ValidationError::new(
+                        codes::MALFORMED_JSON,
+                        &format!(
+                            "network edge at index {} field '{}' must be {}",
+                            i, field, expected
+                        ),
+                    ));
+                }
+                None => {
+                    // Already caught by Stage 4 required-field check.
+                }
             }
         }
     }
 
     // Validate structural types within each dependency object.
     for (i, dep) in service_dependencies.iter().enumerate() {
-        let d = dep.as_object().unwrap();
-        if !d["id"].is_string()
-            || !d["dependent_asset_id"].is_string()
-            || !d["dependency_asset_id"].is_string()
-        {
-            return Err(ValidationError::new(
-                codes::MALFORMED_JSON,
-                &format!("service dependency at index {} has invalid field types", i),
-            ));
-        }
-        // Check unknown fields within dependency object
-        for key in d.keys() {
-            if !ALLOWED_DEPENDENCY_FIELDS.contains(&key.as_str()) {
-                return Err(ValidationError::new(
-                    codes::MALFORMED_JSON,
-                    &format!(
-                        "service dependency at index {} has unknown field: {}",
-                        i, key
-                    ),
-                ));
+        let d = extract_object(dep, i, "service dependency")?;
+        for field in REQUIRED_DEPENDENCY_FIELDS {
+            match d.get(*field) {
+                Some(Value::String(_)) => {}
+                Some(_) => {
+                    return Err(ValidationError::new(
+                        codes::MALFORMED_JSON,
+                        &format!(
+                            "service dependency at index {} field '{}' must be a string",
+                            i, field
+                        ),
+                    ));
+                }
+                None => {
+                    // Already caught by Stage 4 required-field check.
+                }
             }
         }
     }
@@ -354,7 +440,7 @@ pub fn validate_request(raw: &str) -> Result<Value, ValidationError> {
 
     // Stage 11: Validate resource identifiers and availability values.
     for (i, asset) in assets.iter().enumerate() {
-        let a = asset.as_object().unwrap();
+        let a = extract_object(asset, i, "asset")?;
         let id = a["id"].as_str().unwrap();
         if !validate_resource_id(id) {
             return Err(ValidationError::new(
@@ -383,7 +469,7 @@ pub fn validate_request(raw: &str) -> Result<Value, ValidationError> {
     }
 
     for (i, edge) in network_edges.iter().enumerate() {
-        let e = edge.as_object().unwrap();
+        let e = extract_object(edge, i, "network edge")?;
         let id = e["id"].as_str().unwrap();
         if !validate_resource_id(id) {
             return Err(ValidationError::new(
@@ -394,7 +480,7 @@ pub fn validate_request(raw: &str) -> Result<Value, ValidationError> {
     }
 
     for (i, dep) in service_dependencies.iter().enumerate() {
-        let d = dep.as_object().unwrap();
+        let d = extract_object(dep, i, "service dependency")?;
         let id = d["id"].as_str().unwrap();
         if !validate_resource_id(id) {
             return Err(ValidationError::new(
@@ -407,7 +493,7 @@ pub fn validate_request(raw: &str) -> Result<Value, ValidationError> {
     // Stage 12: Validate duplicate entity IDs.
     let mut asset_ids = std::collections::HashSet::new();
     for asset in assets.iter() {
-        let id = asset.as_object().unwrap()["id"].as_str().unwrap();
+        let id = extract_object(asset, 0, "asset")?["id"].as_str().unwrap();
         if !asset_ids.insert(id) {
             return Err(ValidationError::new(
                 codes::DUPLICATE_ASSET_ID,
@@ -418,7 +504,9 @@ pub fn validate_request(raw: &str) -> Result<Value, ValidationError> {
 
     let mut edge_ids = std::collections::HashSet::new();
     for edge in network_edges.iter() {
-        let id = edge.as_object().unwrap()["id"].as_str().unwrap();
+        let id = extract_object(edge, 0, "network edge")?["id"]
+            .as_str()
+            .unwrap();
         if !edge_ids.insert(id) {
             return Err(ValidationError::new(
                 codes::DUPLICATE_NETWORK_EDGE_ID,
@@ -429,7 +517,9 @@ pub fn validate_request(raw: &str) -> Result<Value, ValidationError> {
 
     let mut dependency_ids = std::collections::HashSet::new();
     for dep in service_dependencies.iter() {
-        let id = dep.as_object().unwrap()["id"].as_str().unwrap();
+        let id = extract_object(dep, 0, "service dependency")?["id"]
+            .as_str()
+            .unwrap();
         if !dependency_ids.insert(id) {
             return Err(ValidationError::new(
                 codes::DUPLICATE_SERVICE_DEPENDENCY_ID,
@@ -441,7 +531,7 @@ pub fn validate_request(raw: &str) -> Result<Value, ValidationError> {
     // Stage 13: Validate duplicate graph relationships and duplicate attack sources.
     let mut network_relationships = std::collections::HashSet::new();
     for edge in network_edges.iter() {
-        let e = edge.as_object().unwrap();
+        let e = extract_object(edge, 0, "network edge")?;
         let key = (
             e["source_asset_id"].as_str().unwrap(),
             e["target_asset_id"].as_str().unwrap(),
@@ -456,7 +546,7 @@ pub fn validate_request(raw: &str) -> Result<Value, ValidationError> {
 
     let mut service_relationships = std::collections::HashSet::new();
     for dep in service_dependencies.iter() {
-        let d = dep.as_object().unwrap();
+        let d = extract_object(dep, 0, "service dependency")?;
         let key = (
             d["dependent_asset_id"].as_str().unwrap(),
             d["dependency_asset_id"].as_str().unwrap(),
@@ -484,13 +574,14 @@ pub fn validate_request(raw: &str) -> Result<Value, ValidationError> {
     }
 
     // Stage 14: Validate referenced asset existence.
-    let asset_id_set: std::collections::HashSet<&str> = assets
-        .iter()
-        .map(|a| a.as_object().unwrap()["id"].as_str().unwrap())
-        .collect();
+    let mut asset_id_set = std::collections::HashSet::new();
+    for asset in assets.iter() {
+        let m = extract_object(asset, 0, "asset")?;
+        asset_id_set.insert(m["id"].as_str().unwrap());
+    }
 
     for edge in network_edges.iter() {
-        let e = edge.as_object().unwrap();
+        let e = extract_object(edge, 0, "network edge")?;
         let source_asset_id = e["source_asset_id"].as_str().unwrap();
         let dest_id = e["target_asset_id"].as_str().unwrap();
         if !asset_id_set.contains(source_asset_id) {
@@ -516,7 +607,7 @@ pub fn validate_request(raw: &str) -> Result<Value, ValidationError> {
     }
 
     for dep in service_dependencies.iter() {
-        let d = dep.as_object().unwrap();
+        let d = extract_object(dep, 0, "service dependency")?;
         let dep_id = d["dependent_asset_id"].as_str().unwrap();
         let dep_target = d["dependency_asset_id"].as_str().unwrap();
         if !asset_id_set.contains(dep_id) {
@@ -554,7 +645,7 @@ pub fn validate_request(raw: &str) -> Result<Value, ValidationError> {
 
     // Stage 15: Validate prohibited self-loops.
     for edge in network_edges.iter() {
-        let e = edge.as_object().unwrap();
+        let e = extract_object(edge, 0, "network edge")?;
         if e["source_asset_id"] == e["target_asset_id"] {
             return Err(ValidationError::new(
                 codes::SELF_LOOP_NOT_ALLOWED,
@@ -567,7 +658,7 @@ pub fn validate_request(raw: &str) -> Result<Value, ValidationError> {
         }
     }
     for dep in service_dependencies.iter() {
-        let d = dep.as_object().unwrap();
+        let d = extract_object(dep, 0, "service dependency")?;
         if d["dependent_asset_id"] == d["dependency_asset_id"] {
             return Err(ValidationError::new(
                 codes::SELF_LOOP_NOT_ALLOWED,
@@ -581,16 +672,14 @@ pub fn validate_request(raw: &str) -> Result<Value, ValidationError> {
     }
 
     // Stage 16: Validate attack-source availability.
-    let availability: std::collections::HashMap<&str, &str> = assets
-        .iter()
-        .map(|a| {
-            let a = a.as_object().unwrap();
-            (
-                a["id"].as_str().unwrap(),
-                a["availability"].as_str().unwrap(),
-            )
-        })
-        .collect();
+    let mut availability = std::collections::HashMap::new();
+    for a in assets.iter() {
+        let m = extract_object(a, 0, "asset")?;
+        availability.insert(
+            m["id"].as_str().unwrap(),
+            m["availability"].as_str().unwrap(),
+        );
+    }
 
     for source in attack_sources.iter() {
         let sid = source.as_str().unwrap();
@@ -617,4 +706,195 @@ pub fn deserialize_request(
             &format!("failed to deserialize request: {}", e),
         )
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn make_valid_json() -> String {
+        serde_json::json!({
+            "contract_version": "1.0",
+            "request_id": "req-1",
+            "scenario_id": "scen-1",
+            "assets": [
+                {"id": "A", "availability": "available"},
+                {"id": "B", "availability": "unavailable"}
+            ],
+            "network_edges": [
+                {"id": "e1", "source_asset_id": "A", "target_asset_id": "B", "enabled": true}
+            ],
+            "service_dependencies": [
+                {"id": "d1", "dependent_asset_id": "B", "dependency_asset_id": "A"}
+            ],
+            "attack_source_asset_ids": ["A"]
+        })
+        .to_string()
+    }
+
+    #[test]
+    fn nested_missing_asset_id() {
+        let json = serde_json::json!({
+            "contract_version": "1.0",
+            "request_id": "req-1",
+            "scenario_id": "scen-1",
+            "assets": [{"availability": "available"}],
+            "network_edges": [],
+            "service_dependencies": [],
+            "attack_source_asset_ids": []
+        });
+        let result = validate_request(&serde_json::to_string(&json).unwrap());
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err().code, "MALFORMED_JSON");
+    }
+
+    #[test]
+    fn nested_missing_availability() {
+        let json = serde_json::json!({
+            "contract_version": "1.0",
+            "request_id": "req-1",
+            "scenario_id": "scen-1",
+            "assets": [{"id": "A"}],
+            "network_edges": [],
+            "service_dependencies": [],
+            "attack_source_asset_ids": []
+        });
+        let result = validate_request(&serde_json::to_string(&json).unwrap());
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err().code, "MALFORMED_JSON");
+    }
+
+    #[test]
+    fn nested_missing_edge_fields() {
+        let json = serde_json::json!({
+            "contract_version": "1.0",
+            "request_id": "req-1",
+            "scenario_id": "scen-1",
+            "assets": [{"id": "A", "availability": "available"}],
+            "network_edges": [{"id": "e1"}],
+            "service_dependencies": [],
+            "attack_source_asset_ids": []
+        });
+        let result = validate_request(&serde_json::to_string(&json).unwrap());
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err().code, "MALFORMED_JSON");
+    }
+
+    #[test]
+    fn nested_missing_dependency_fields() {
+        let json = serde_json::json!({
+            "contract_version": "1.0",
+            "request_id": "req-1",
+            "scenario_id": "scen-1",
+            "assets": [{"id": "A", "availability": "available"}],
+            "network_edges": [],
+            "service_dependencies": [{"id": "d1"}],
+            "attack_source_asset_ids": []
+        });
+        let result = validate_request(&serde_json::to_string(&json).unwrap());
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err().code, "MALFORMED_JSON");
+    }
+
+    #[test]
+    fn nested_non_object_asset_entry() {
+        let json = serde_json::json!({
+            "contract_version": "1.0",
+            "request_id": "req-1",
+            "scenario_id": "scen-1",
+            "assets": ["not an object"],
+            "network_edges": [],
+            "service_dependencies": [],
+            "attack_source_asset_ids": []
+        });
+        let result = validate_request(&serde_json::to_string(&json).unwrap());
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err().code, "MALFORMED_JSON");
+    }
+
+    #[test]
+    fn nested_non_object_edge_entry() {
+        let json = serde_json::json!({
+            "contract_version": "1.0",
+            "request_id": "req-1",
+            "scenario_id": "scen-1",
+            "assets": [{"id": "A", "availability": "available"}],
+            "network_edges": ["not an object"],
+            "service_dependencies": [],
+            "attack_source_asset_ids": []
+        });
+        let result = validate_request(&serde_json::to_string(&json).unwrap());
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err().code, "MALFORMED_JSON");
+    }
+
+    #[test]
+    fn nested_non_object_dependency_entry() {
+        let json = serde_json::json!({
+            "contract_version": "1.0",
+            "request_id": "req-1",
+            "scenario_id": "scen-1",
+            "assets": [{"id": "A", "availability": "available"}],
+            "network_edges": [],
+            "service_dependencies": ["not an object"],
+            "attack_source_asset_ids": []
+        });
+        let result = validate_request(&serde_json::to_string(&json).unwrap());
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err().code, "MALFORMED_JSON");
+    }
+
+    #[test]
+    fn nested_wrong_structural_types() {
+        let json = serde_json::json!({
+            "contract_version": "1.0",
+            "request_id": "req-1",
+            "scenario_id": "scen-1",
+            "assets": [{"id": 123, "availability": "available"}],
+            "network_edges": [],
+            "service_dependencies": [],
+            "attack_source_asset_ids": []
+        });
+        let result = validate_request(&serde_json::to_string(&json).unwrap());
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err().code, "MALFORMED_JSON");
+    }
+
+    #[test]
+    fn nested_unknown_fields() {
+        let json = serde_json::json!({
+            "contract_version": "1.0",
+            "request_id": "req-1",
+            "scenario_id": "scen-1",
+            "assets": [{"id": "A", "availability": "available", "extra": true}],
+            "network_edges": [],
+            "service_dependencies": [],
+            "attack_source_asset_ids": []
+        });
+        let result = validate_request(&serde_json::to_string(&json).unwrap());
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err().code, "MALFORMED_JSON");
+    }
+
+    #[test]
+    fn nested_structural_errors_win_over_unsupported_version() {
+        let json = serde_json::json!({
+            "contract_version": "2.0",
+            "request_id": "req-1",
+            "scenario_id": "scen-1",
+            "assets": [{"id": "A", "availability": "available", "extra_field": 1}],
+            "network_edges": [],
+            "service_dependencies": [],
+            "attack_source_asset_ids": []
+        });
+        let result = validate_request(&serde_json::to_string(&json).unwrap());
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err().code, "MALFORMED_JSON");
+    }
+
+    #[test]
+    fn valid_request_passes() {
+        let result = validate_request(&make_valid_json());
+        assert!(result.is_ok());
+    }
 }

@@ -77,6 +77,50 @@ pub fn health_check(request: &HealthRequest) -> Result<HealthResponse, EngineErr
     })
 }
 
+/// Raw JSON graph simulation request handler exported to JavaScript.
+///
+/// Accepts raw JSON, runs the strict graph request validation pipeline,
+/// deserializes only after successful validation, invokes the typed graph
+/// simulation, and returns the graph response as JSON. Invalid input returns
+/// a structured error JSON object — never a Rust panic.
+#[wasm_bindgen]
+pub fn simulate_graph_json(input: &str) -> String {
+    match simulate_graph_json_inner(input) {
+        Ok(response) => response,
+        Err(error) => serde_json::to_string(&error).unwrap_or_else(|_| {
+            r#"{"code":"INTERNAL_ERROR","message":"failed to serialize error"}"#.to_string()
+        }),
+    }
+}
+
+/// Inner implementation returning `Result<String, EngineError>`.
+fn simulate_graph_json_inner(input: &str) -> Result<String, EngineError> {
+    // Run the strict graph request validation pipeline first.
+    let validated = graph_validation::validate_request(input).map_err(|e| EngineError {
+        code: e.code,
+        message: e.message,
+    })?;
+
+    // Deserialize only after successful validation.
+    let request: GraphSimulationRequest = graph_validation::deserialize_request(validated)
+        .map_err(|e| EngineError {
+            code: e.code,
+            message: e.message,
+        })?;
+
+    // Invoke the typed graph simulation.
+    let response = simulate_graph(&request).map_err(|e| EngineError {
+        code: e.code,
+        message: e.message,
+    })?;
+
+    // Return the graph response as JSON.
+    serde_json::to_string(&response).map_err(|e| EngineError {
+        code: "INTERNAL_ERROR".to_string(),
+        message: format!("failed to serialize response: {}", e),
+    })
+}
+
 /// Typed graph simulation operation.
 ///
 /// Performs the full validation pipeline, graph simulation, and returns
