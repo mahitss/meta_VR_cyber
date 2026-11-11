@@ -158,7 +158,7 @@ cargo test --workspace
 wasm-pack build crates/security-engine \
   --target bundler \
   --dev \
-  --out-dir client/src/wasm/security_engine \
+  --out-dir ../../client/src/wasm/security_engine \
   --out-name security_engine
 ```
 
