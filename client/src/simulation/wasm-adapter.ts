@@ -21,7 +21,7 @@
 //   Error:    { "code": "<string>", "message": "<string>" }
 // ============================================================================
 
-import { health_check_json } from "../wasm/security_engine/security_engine";
+import { health_check_json, simulate_graph_json } from "../wasm/security_engine/security_engine";
 
 export const CONTRACT_VERSION = "1.0";
 export const ENGINE_NAME = "security-engine";
@@ -75,6 +75,65 @@ export interface HealthResponse {
 export interface EngineErrorBody {
   code: string;
   message: string;
+}
+
+// ---------------------------------------------------------------------------
+// Graph simulation request/response types
+// ---------------------------------------------------------------------------
+
+export interface Asset {
+  id: string;
+  availability: "available" | "unavailable";
+}
+
+export interface NetworkEdge {
+  id: string;
+  source_asset_id: string;
+  target_asset_id: string;
+  enabled: boolean;
+}
+
+export interface ServiceDependency {
+  id: string;
+  dependent_asset_id: string;
+  dependency_asset_id: string;
+}
+
+export interface GraphSimulationRequest {
+  contract_version: string;
+  request_id: string;
+  scenario_id: string;
+  assets: Asset[];
+  network_edges: NetworkEdge[];
+  service_dependencies: ServiceDependency[];
+  attack_source_asset_ids: string[];
+}
+
+export interface Witness {
+  target_asset: string;
+  source_asset: string;
+  asset_path: string[];
+  edge_path: string[];
+}
+
+export interface NetworkReachability {
+  reachable_asset_ids: string[];
+  unreachable_asset_ids: string[];
+  witnesses: Witness[];
+}
+
+export interface ServiceImpact {
+  initially_unavailable_asset_ids: string[];
+  impacted_dependent_asset_ids: string[];
+  unavailable_asset_ids: string[];
+}
+
+export interface GraphSimulationResponse {
+  contract_version: string;
+  request_id: string;
+  scenario_id: string;
+  network_reachability: NetworkReachability;
+  service_impact: ServiceImpact;
 }
 
 // ---------------------------------------------------------------------------
@@ -160,6 +219,160 @@ export function isEngineError(body: unknown): body is EngineErrorBody {
 }
 
 // ---------------------------------------------------------------------------
+// Graph request validation
+// ---------------------------------------------------------------------------
+
+/** Validate that a graph simulation request body conforms to contract v1.0. */
+export function validateGraphRequest(request: GraphSimulationRequest): void {
+  if (request.contract_version !== CONTRACT_VERSION) {
+    throw new EngineRequestError(
+      "UNSUPPORTED_CONTRACT_VERSION",
+      `unsupported contract version '${request.contract_version}', expected '${CONTRACT_VERSION}'`,
+    );
+  }
+
+  if (
+    typeof request.request_id !== "string" ||
+    request.request_id.length === 0 ||
+    request.request_id.length > 256 ||
+    !/^[\x20-\x7E]+$/.test(request.request_id)
+  ) {
+    throw new EngineRequestError(
+      "INVALID_REQUEST_ID",
+      "request_id must be a non-empty ASCII string of at most 256 characters",
+    );
+  }
+
+  if (
+    typeof request.scenario_id !== "string" ||
+    request.scenario_id.length === 0 ||
+    request.scenario_id.length > 64 ||
+    !/^[A-Za-z0-9][A-Za-z0-9._:\\-]{0,63}$/.test(request.scenario_id)
+  ) {
+    throw new EngineRequestError(
+      "INVALID_SCENARIO_ID",
+      "scenario_id must start with an alphanumeric character and contain only alphanumeric, '.', '_', ':', or '-', max 64 characters",
+    );
+  }
+
+  // Validate assets
+  for (const [i, asset] of request.assets.entries()) {
+    if (
+      typeof asset.id !== "string" ||
+      asset.id.length === 0 ||
+      asset.id.length > 64 ||
+      !/^[A-Za-z0-9][A-Za-z0-9._:\\-]{0,63}$/.test(asset.id)
+    ) {
+      throw new EngineRequestError(
+        "INVALID_GRAPH",
+        `asset at index ${i} has invalid id '${asset.id}'`,
+      );
+    }
+    if (asset.availability !== "available" && asset.availability !== "unavailable") {
+      throw new EngineRequestError(
+        "INVALID_GRAPH",
+        `asset at index ${i} has invalid availability '${asset.availability}'`,
+      );
+    }
+  }
+
+  // Validate network edges
+  for (const [i, edge] of request.network_edges.entries()) {
+    if (
+      typeof edge.id !== "string" ||
+      edge.id.length === 0 ||
+      edge.id.length > 64 ||
+      !/^[A-Za-z0-9][A-Za-z0-9._:\\-]{0,63}$/.test(edge.id)
+    ) {
+      throw new EngineRequestError(
+        "INVALID_GRAPH",
+        `network edge at index ${i} has invalid id '${edge.id}'`,
+      );
+    }
+    if (
+      typeof edge.source_asset_id !== "string" ||
+      edge.source_asset_id.length === 0 ||
+      edge.source_asset_id.length > 64 ||
+      !/^[A-Za-z0-9][A-Za-z0-9._:\\-]{0,63}$/.test(edge.source_asset_id)
+    ) {
+      throw new EngineRequestError(
+        "INVALID_GRAPH",
+        `network edge at index ${i} has invalid source_asset_id '${edge.source_asset_id}'`,
+      );
+    }
+    if (
+      typeof edge.target_asset_id !== "string" ||
+      edge.target_asset_id.length === 0 ||
+      edge.target_asset_id.length > 64 ||
+      !/^[A-Za-z0-9][A-Za-z0-9._:\\-]{0,63}$/.test(edge.target_asset_id)
+    ) {
+      throw new EngineRequestError(
+        "INVALID_GRAPH",
+        `network edge at index ${i} has invalid target_asset_id '${edge.target_asset_id}'`,
+      );
+    }
+    if (typeof edge.enabled !== "boolean") {
+      throw new EngineRequestError(
+        "INVALID_GRAPH",
+        `network edge at index ${i} has invalid enabled field`,
+      );
+    }
+  }
+
+  // Validate service dependencies
+  for (const [i, dep] of request.service_dependencies.entries()) {
+    if (
+      typeof dep.id !== "string" ||
+      dep.id.length === 0 ||
+      dep.id.length > 64 ||
+      !/^[A-Za-z0-9][A-Za-z0-9._:\\-]{0,63}$/.test(dep.id)
+    ) {
+      throw new EngineRequestError(
+        "INVALID_GRAPH",
+        `service dependency at index ${i} has invalid id '${dep.id}'`,
+      );
+    }
+    if (
+      typeof dep.dependent_asset_id !== "string" ||
+      dep.dependent_asset_id.length === 0 ||
+      dep.dependent_asset_id.length > 64 ||
+      !/^[A-Za-z0-9][A-Za-z0-9._:\\-]{0,63}$/.test(dep.dependent_asset_id)
+    ) {
+      throw new EngineRequestError(
+        "INVALID_GRAPH",
+        `service dependency at index ${i} has invalid dependent_asset_id '${dep.dependent_asset_id}'`,
+      );
+    }
+    if (
+      typeof dep.dependency_asset_id !== "string" ||
+      dep.dependency_asset_id.length === 0 ||
+      dep.dependency_asset_id.length > 64 ||
+      !/^[A-Za-z0-9][A-Za-z0-9._:\\-]{0,63}$/.test(dep.dependency_asset_id)
+    ) {
+      throw new EngineRequestError(
+        "INVALID_GRAPH",
+        `service dependency at index ${i} has invalid dependency_asset_id '${dep.dependency_asset_id}'`,
+      );
+    }
+  }
+
+  // Validate attack sources
+  for (const [i, source_id] of request.attack_source_asset_ids.entries()) {
+    if (
+      typeof source_id !== "string" ||
+      source_id.length === 0 ||
+      source_id.length > 64 ||
+      !/^[A-Za-z0-9][A-Za-z0-9._:\\-]{0,63}$/.test(source_id)
+    ) {
+      throw new EngineRequestError(
+        "INVALID_GRAPH",
+        `attack_source_asset_ids at index ${i} has invalid id '${source_id}'`,
+      );
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Module state
 // ---------------------------------------------------------------------------
 
@@ -178,9 +391,12 @@ export function initialize(): void {
 
   try {
     // The import at the top of this file already runs __wbindgen_start().
-    // Touch the exported function to confirm the module is live.
+    // Touch both exported functions to confirm the module is live.
     if (typeof health_check_json !== "function") {
       throw new Error("health_check_json export is not a function");
+    }
+    if (typeof simulate_graph_json !== "function") {
+      throw new Error("simulate_graph_json export is not a function");
     }
     initialized = true;
   } catch (error) {
@@ -195,6 +411,380 @@ export function isInitialized(): boolean {
 
 export function getInitializationError(): Error | null {
   return initError;
+}
+
+// ---------------------------------------------------------------------------
+// Graph response validation
+// ---------------------------------------------------------------------------
+
+/** Validate that a graph simulation response body conforms to contract v1.0. */
+export function validateGraphResponse(
+  body: unknown,
+  request: GraphSimulationRequest,
+): GraphSimulationResponse {
+  if (!body || typeof body !== "object" || Array.isArray(body)) {
+    throw new EngineResponseError(
+      "INVALID_RESPONSE_SHAPE",
+      "graph response is not a JSON object",
+    );
+  }
+
+  const response = body as GraphSimulationResponse;
+
+  if (
+    typeof response.contract_version !== "string" ||
+    response.contract_version !== request.contract_version
+  ) {
+    throw new EngineResponseError(
+      "UNSUPPORTED_CONTRACT_VERSION",
+      `response contract version '${response.contract_version}' does not match request`,
+    );
+  }
+
+  if (response.request_id !== request.request_id) {
+    throw new EngineResponseError(
+      "INVALID_REQUEST_ID",
+      `response request_id '${response.request_id}' does not match request '${request.request_id}'`,
+    );
+  }
+
+  if (response.scenario_id !== request.scenario_id) {
+    throw new EngineResponseError(
+      "INVALID_SCENARIO_ID",
+      `response scenario_id '${response.scenario_id}' does not match request '${request.scenario_id}'`,
+    );
+  }
+
+  // Validate network reachability
+  const reachability = response.network_reachability;
+  if (!reachability || typeof reachability !== "object") {
+    throw new EngineResponseError(
+      "INVALID_RESPONSE_SHAPE",
+      "network_reachability is missing or not an object",
+    );
+  }
+
+  const reachable_ids = reachability.reachable_asset_ids;
+  const unreachable_ids = reachability.unreachable_asset_ids;
+  const witnesses = reachability.witnesses;
+
+  if (!Array.isArray(reachable_ids) || !reachable_ids.every((id) => typeof id === "string")) {
+    throw new EngineResponseError(
+      "INVALID_RESPONSE_SHAPE",
+      "reachable_asset_ids must be an array of strings",
+    );
+  }
+  if (!Array.isArray(unreachable_ids) || !unreachable_ids.every((id) => typeof id === "string")) {
+    throw new EngineResponseError(
+      "INVALID_RESPONSE_SHAPE",
+      "unreachable_asset_ids must be an array of strings",
+    );
+  }
+  if (!Array.isArray(witnesses) || !witnesses.every((w) => typeof w === "object")) {
+    throw new EngineResponseError(
+      "INVALID_RESPONSE_SHAPE",
+      "witnesses must be an array of objects",
+    );
+  }
+
+  // Reachable IDs sorted and unique
+  const reachableSorted = [...reachable_ids].sort();
+  const reachableUnique = [...new Set(reachable_ids)];
+  if (reachable_ids.join("\n") !== reachableSorted.join("\n") || reachable_ids.length !== reachableUnique.length) {
+    throw new EngineResponseError(
+      "INVALID_RESPONSE_SHAPE",
+      "reachable_asset_ids must be sorted and unique",
+    );
+  }
+
+  // Unreachable IDs sorted and unique
+  const unreachableSorted = [...unreachable_ids].sort();
+  const unreachableUnique = [...new Set(unreachable_ids)];
+  if (unreachable_ids.join("\n") !== unreachableSorted.join("\n") || unreachable_ids.length !== unreachableUnique.length) {
+    throw new EngineResponseError(
+      "INVALID_RESPONSE_SHAPE",
+      "unreachable_asset_ids must be sorted and unique",
+    );
+  }
+
+  // Reachable and unreachable must be disjoint
+  const unreachableSet = new Set(unreachable_ids);
+  for (const id of reachable_ids) {
+    if (unreachableSet.has(id)) {
+      throw new EngineResponseError(
+        "INVALID_RESPONSE_SHAPE",
+        `asset '${id}' is both reachable and unreachable`,
+      );
+    }
+  }
+
+  // Witnesses sorted by target_asset
+  const witnessesSorted = [...witnesses].sort((a, b) => a.target_asset.localeCompare(b.target_asset));
+  if (
+    witnesses.join("\n") !== witnessesSorted.map((w) => w.target_asset).join("\n")
+  ) {
+    throw new EngineResponseError(
+      "INVALID_RESPONSE_SHAPE",
+      "witnesses must be sorted by target_asset",
+    );
+  }
+
+  // Exactly one witness per reachable target
+  const witnessTargets = new Set(witnesses.map((w) => w.target_asset));
+  if (witnessTargets.size !== reachable_ids.length) {
+    throw new EngineResponseError(
+      "INVALID_RESPONSE_SHAPE",
+      "number of witnesses must equal number of reachable assets",
+    );
+  }
+
+  const reachableSet = new Set(reachable_ids);
+  for (const w of witnesses) {
+    if (
+      typeof w.target_asset !== "string" ||
+      typeof w.source_asset !== "string" ||
+      !Array.isArray(w.asset_path) ||
+      !w.asset_path.every((id) => typeof id === "string") ||
+      !Array.isArray(w.edge_path) ||
+      !w.edge_path.every((id) => typeof id === "string")
+    ) {
+      throw new EngineResponseError(
+        "INVALID_RESPONSE_SHAPE",
+        `witness for target '${w.target_asset}' has invalid fields`,
+      );
+    }
+    // Asset path must begin at source and end at target
+    if (w.asset_path.length === 0 || w.asset_path[0] !== w.source_asset) {
+      throw new EngineResponseError(
+        "INVALID_RESPONSE_SHAPE",
+        `witness asset_path must start with source_asset '${w.source_asset}'`,
+      );
+    }
+    if (w.asset_path[w.asset_path.length - 1] !== w.target_asset) {
+      throw new EngineResponseError(
+        "INVALID_RESPONSE_SHAPE",
+        `witness asset_path must end with target_asset '${w.target_asset}'`,
+      );
+    }
+    // edge_path.length must equal asset_path.length - 1
+    if (w.edge_path.length !== w.asset_path.length - 1) {
+      throw new EngineResponseError(
+        "INVALID_RESPONSE_SHAPE",
+        `witness edge_path length must equal asset_path.length - 1`,
+      );
+    }
+    // All asset path IDs must exist in request
+    const assetIds = new Set(request.assets.map((a) => a.id));
+    for (const id of w.asset_path) {
+      if (!assetIds.has(id)) {
+        throw new EngineResponseError(
+          "INVALID_RESPONSE_SHAPE",
+          `asset_path contains unknown asset '${id}'`,
+        );
+      }
+    }
+    // All edge path IDs must exist in request
+    const edgeIds = new Set(request.network_edges.map((e) => e.id));
+    for (const id of w.edge_path) {
+      if (!edgeIds.has(id)) {
+        throw new EngineResponseError(
+          "INVALID_RESPONSE_SHAPE",
+          `edge_path contains unknown edge '${id}'`,
+        );
+      }
+    }
+    // Witness target must be reachable
+    if (!reachableSet.has(w.target_asset)) {
+      throw new EngineResponseError(
+        "INVALID_RESPONSE_SHAPE",
+        `witness target '${w.target_asset}' is not reachable`,
+      );
+    }
+  }
+
+  // Validate service impact
+  const impact = response.service_impact;
+  if (!impact || typeof impact !== "object") {
+    throw new EngineResponseError(
+      "INVALID_RESPONSE_SHAPE",
+      "service_impact is missing or not an object",
+    );
+  }
+
+  const assetIds = new Set(request.assets.map((a) => a.id));
+
+  const initial_ids = impact.initially_unavailable_asset_ids;
+  const impacted_ids = impact.impacted_dependent_asset_ids;
+  const unavailable_ids = impact.unavailable_asset_ids;
+
+  if (!Array.isArray(initial_ids) || !initial_ids.every((id) => typeof id === "string")) {
+    throw new EngineResponseError(
+      "INVALID_RESPONSE_SHAPE",
+      "initially_unavailable_asset_ids must be an array of strings",
+    );
+  }
+  if (!Array.isArray(impacted_ids) || !impacted_ids.every((id) => typeof id === "string")) {
+    throw new EngineResponseError(
+      "INVALID_RESPONSE_SHAPE",
+      "impacted_dependent_asset_ids must be an array of strings",
+    );
+  }
+  if (!Array.isArray(unavailable_ids) || !unavailable_ids.every((id) => typeof id === "string")) {
+    throw new EngineResponseError(
+      "INVALID_RESPONSE_SHAPE",
+      "unavailable_asset_ids must be an array of strings",
+    );
+  }
+
+  // Initially unavailable IDs sorted and unique
+  const initialSorted = [...initial_ids].sort();
+  const initialUnique = [...new Set(initial_ids)];
+  if (initial_ids.join("\n") !== initialSorted.join("\n") || initial_ids.length !== initialUnique.length) {
+    throw new EngineResponseError(
+      "INVALID_RESPONSE_SHAPE",
+      "initially_unavailable_asset_ids must be sorted and unique",
+    );
+  }
+
+  // Impacted IDs sorted and unique
+  const impactedSorted = [...impacted_ids].sort();
+  const impactedUnique = [...new Set(impacted_ids)];
+  if (impacted_ids.join("\n") !== impactedSorted.join("\n") || impacted_ids.length !== impactedUnique.length) {
+    throw new EngineResponseError(
+      "INVALID_RESPONSE_SHAPE",
+      "impacted_dependent_asset_ids must be sorted and unique",
+    );
+  }
+
+  // Unavailable IDs sorted and unique
+  const unavailableSorted = [...unavailable_ids].sort();
+  const unavailableUnique = [...new Set(unavailable_ids)];
+  if (unavailable_ids.join("\n") !== unavailableSorted.join("\n") || unavailable_ids.length !== unavailableUnique.length) {
+    throw new EngineResponseError(
+      "INVALID_RESPONSE_SHAPE",
+      "unavailable_asset_ids must be sorted and unique",
+    );
+  }
+
+  // All IDs must refer to requested assets
+  for (const id of initial_ids) {
+    if (!assetIds.has(id)) {
+      throw new EngineResponseError(
+        "INVALID_RESPONSE_SHAPE",
+        `initially_unavailable_asset_ids contains unknown asset '${id}'`,
+      );
+    }
+  }
+  for (const id of impacted_ids) {
+    if (!assetIds.has(id)) {
+      throw new EngineResponseError(
+        "INVALID_RESPONSE_SHAPE",
+        `impacted_dependent_asset_ids contains unknown asset '${id}'`,
+      );
+    }
+  }
+  for (const id of unavailable_ids) {
+    if (!assetIds.has(id)) {
+      throw new EngineResponseError(
+        "INVALID_RESPONSE_SHAPE",
+        `unavailable_asset_ids contains unknown asset '${id}'`,
+      );
+    }
+  }
+
+  // Initially unavailable must agree with input availability
+  const assetAvailability = new Map(request.assets.map((a) => [a.id, a.availability]));
+  for (const id of initial_ids) {
+    if (assetAvailability.get(id) !== "unavailable") {
+      throw new EngineResponseError(
+        "INVALID_RESPONSE_SHAPE",
+        `initially_unavailable_asset_ids contains available asset '${id}'`,
+      );
+    }
+  }
+
+  // Impacted must exclude initially unavailable
+  const initialSet = new Set(initial_ids);
+  for (const id of impacted_ids) {
+    if (initialSet.has(id)) {
+      throw new EngineResponseError(
+        "INVALID_RESPONSE_SHAPE",
+        `impacted_dependent_asset_ids contains initially unavailable asset '${id}'`,
+      );
+    }
+  }
+
+  // unavailable_asset_ids must equal sorted union of initial + impacted
+  const expectedUnavailable = [...new Set([...initial_ids, ...impacted_ids])].sort();
+  if (unavailable_ids.join("\n") !== expectedUnavailable.join("\n")) {
+    throw new EngineResponseError(
+      "INVALID_RESPONSE_SHAPE",
+      "unavailable_asset_ids does not equal sorted union of initial and impacted",
+    );
+  }
+
+  return response;
+}
+
+// ---------------------------------------------------------------------------
+// Graph simulation execution
+// ---------------------------------------------------------------------------
+
+/**
+ * Submit a graph simulation request to the Rust/WASM engine.
+ *
+ * Serializes the request to JSON, invokes simulate_graph_json, parses and
+ * validates the response, and returns a fully typed GraphSimulationResponse.
+ * Throws EngineRequestError for invalid input or engine errors, and
+ * EngineResponseError for malformed or inconsistent responses.
+ */
+export function simulateGraph(
+  request: GraphSimulationRequest,
+): GraphSimulationResponse {
+  if (!initialized) {
+    throw new WasmInitializationError(
+      "WASM module not initialized. Call initialize() before simulateGraph().",
+      initError ?? undefined,
+    );
+  }
+
+  validateGraphRequest(request);
+
+  const requestJson = JSON.stringify(request);
+
+  let responseJson: string;
+  try {
+    responseJson = simulate_graph_json(requestJson);
+  } catch (error) {
+    throw new EngineResponseError(
+      "ENGINE_INVOCATION_FAILURE",
+      `Rust engine threw during invocation: ${
+        error instanceof Error ? error.message : String(error)
+      }`,
+    );
+  }
+
+  let responseBody: unknown;
+  try {
+    responseBody = JSON.parse(responseJson);
+  } catch (error) {
+    throw new EngineResponseError(
+      "INVALID_RESPONSE_JSON",
+      `engine returned non-JSON: ${
+        error instanceof Error ? error.message : String(error)
+      }`,
+    );
+  }
+
+  // Rust returns an error object when validation fails.
+  if (isEngineError(responseBody)) {
+    throw new EngineRequestError(
+      responseBody.code,
+      responseBody.message,
+    );
+  }
+
+  return validateGraphResponse(responseBody, request);
 }
 
 // ---------------------------------------------------------------------------
