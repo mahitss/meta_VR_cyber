@@ -5,6 +5,6 @@ import { __wbg_set_wasm } from "./security_engine_bg.js";
 __wbg_set_wasm(wasm);
 wasm.__wbindgen_start();
 export {
-    health_check_json
+    health_check_json, simulate_graph_json
 } from "./security_engine_bg.js";
 export { wasm as __wasm }

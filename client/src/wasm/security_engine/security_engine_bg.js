@@ -23,6 +23,31 @@ export function health_check_json(input) {
     }
 }
 
+/**
+ * Raw JSON graph simulation request handler exported to JavaScript.
+ *
+ * Accepts raw JSON, runs the strict graph request validation pipeline,
+ * deserializes only after successful validation, invokes the typed graph
+ * simulation, and returns the graph response as JSON. Invalid input returns
+ * a structured error JSON object — never a Rust panic.
+ * @param {string} input
+ * @returns {string}
+ */
+export function simulate_graph_json(input) {
+    let deferred2_0;
+    let deferred2_1;
+    try {
+        const ptr0 = passStringToWasm0(input, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.simulate_graph_json(ptr0, len0);
+        deferred2_0 = ret[0];
+        deferred2_1 = ret[1];
+        return getStringFromWasm0(ret[0], ret[1]);
+    } finally {
+        wasm.__wbindgen_free(deferred2_0, deferred2_1, 1);
+    }
+}
+
 //#endregion
 
 //#region wasm imports
