@@ -38,9 +38,13 @@ import {
   initialize,
   healthCheck,
   simulateGraph,
+  validateGraphResponse,
+  validateGraphRequest,
   CONTRACT_VERSION,
   GraphSimulationRequest,
+  GraphSimulationResponse,
   EngineRequestError,
+  EngineResponseError,
 } from "./wasm-adapter";
 
 type ConsoleMethod = "log" | "info" | "warn" | "error";
@@ -389,6 +393,783 @@ export async function runWasmDevDiagnostic(): Promise<void> {
         "error",
         `NEGATIVE Test 10 (adapter wraps engine error): FAIL — expected EngineRequestError with UNKNOWN_ASSET_REFERENCE, got ${error instanceof Error ? error.constructor.name : typeof error}`,
       );
+    }
+  }
+
+  // ========================================================================
+  // RESPONSE VALIDATION TESTS — through validateGraphResponse directly
+  // ========================================================================
+
+  // ------------------------------------------------------------------
+  // Test 11: Valid non-empty witness list accepted
+  // ------------------------------------------------------------------
+  {
+    const resp: GraphSimulationResponse = {
+      contract_version: CONTRACT_VERSION,
+      request_id: "diag-11",
+      scenario_id: "scen-dev-001",
+      network_reachability: {
+        reachable_asset_ids: ["asset-01", "asset-02"],
+        unreachable_asset_ids: [],
+        witnesses: [
+          { target_asset: "asset-01", source_asset: "asset-01", asset_path: ["asset-01"], edge_path: [] },
+          { target_asset: "asset-02", source_asset: "asset-01", asset_path: ["asset-01", "asset-02"], edge_path: ["net-01"] },
+        ],
+      },
+      service_impact: {
+        initially_unavailable_asset_ids: [],
+        impacted_dependent_asset_ids: [],
+        unavailable_asset_ids: [],
+      },
+    };
+    try {
+      validateGraphResponse(resp, {
+        contract_version: CONTRACT_VERSION,
+        request_id: "diag-11",
+        scenario_id: "scen-dev-001",
+        assets: [
+          { id: "asset-01", availability: "available" },
+          { id: "asset-02", availability: "available" },
+        ],
+        network_edges: [{ id: "net-01", source_asset_id: "asset-01", target_asset_id: "asset-02", enabled: true }],
+        service_dependencies: [],
+        attack_source_asset_ids: ["asset-01"],
+      });
+      styledLog(
+        "info",
+        "POSITIVE Test 11 (valid witness list): PASS — validateGraphResponse accepted valid response",
+      );
+    } catch (error) {
+      styledLog(
+        "error",
+        `POSITIVE Test 11 (valid witness list): FAIL — ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+  }
+
+  // ------------------------------------------------------------------
+  // Test 12: Correctly ordered witnesses accepted
+  // ------------------------------------------------------------------
+  {
+    const resp: GraphSimulationResponse = {
+      contract_version: CONTRACT_VERSION,
+      request_id: "diag-12",
+      scenario_id: "scen-dev-001",
+      network_reachability: {
+        reachable_asset_ids: ["asset-01", "asset-02", "asset-03"],
+        unreachable_asset_ids: [],
+        witnesses: [
+          { target_asset: "asset-01", source_asset: "asset-01", asset_path: ["asset-01"], edge_path: [] },
+          { target_asset: "asset-02", source_asset: "asset-01", asset_path: ["asset-01", "asset-02"], edge_path: ["net-01"] },
+          { target_asset: "asset-03", source_asset: "asset-01", asset_path: ["asset-01", "asset-02", "asset-03"], edge_path: ["net-01", "net-02"] },
+        ],
+      },
+      service_impact: {
+        initially_unavailable_asset_ids: [],
+        impacted_dependent_asset_ids: [],
+        unavailable_asset_ids: [],
+      },
+    };
+    try {
+      validateGraphResponse(resp, {
+        contract_version: CONTRACT_VERSION,
+        request_id: "diag-12",
+        scenario_id: "scen-dev-001",
+        assets: [
+          { id: "asset-01", availability: "available" },
+          { id: "asset-02", availability: "available" },
+          { id: "asset-03", availability: "available" },
+        ],
+        network_edges: [
+          { id: "net-01", source_asset_id: "asset-01", target_asset_id: "asset-02", enabled: true },
+          { id: "net-02", source_asset_id: "asset-02", target_asset_id: "asset-03", enabled: true },
+        ],
+        service_dependencies: [],
+        attack_source_asset_ids: ["asset-01"],
+      });
+      styledLog(
+        "info",
+        "POSITIVE Test 12 (ordered witnesses): PASS — validateGraphResponse accepted sorted witnesses",
+      );
+    } catch (error) {
+      styledLog(
+        "error",
+        `POSITIVE Test 12 (ordered witnesses): FAIL — ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+  }
+
+  // ------------------------------------------------------------------
+  // Test 13: Duplicate witness target rejected
+  // ------------------------------------------------------------------
+  {
+    const resp: GraphSimulationResponse = {
+      contract_version: CONTRACT_VERSION,
+      request_id: "diag-13",
+      scenario_id: "scen-dev-001",
+      network_reachability: {
+        reachable_asset_ids: ["asset-01", "asset-02"],
+        unreachable_asset_ids: [],
+        witnesses: [
+          { target_asset: "asset-01", source_asset: "asset-01", asset_path: ["asset-01"], edge_path: [] },
+          { target_asset: "asset-01", source_asset: "asset-01", asset_path: ["asset-01"], edge_path: [] },
+        ],
+      },
+      service_impact: {
+        initially_unavailable_asset_ids: [],
+        impacted_dependent_asset_ids: [],
+        unavailable_asset_ids: [],
+      },
+    };
+    try {
+      validateGraphResponse(resp, {
+        contract_version: CONTRACT_VERSION,
+        request_id: "diag-13",
+        scenario_id: "scen-dev-001",
+        assets: [{ id: "asset-01", availability: "available" }, { id: "asset-02", availability: "available" }],
+        network_edges: [{ id: "net-01", source_asset_id: "asset-01", target_asset_id: "asset-02", enabled: true }],
+        service_dependencies: [],
+        attack_source_asset_ids: ["asset-01"],
+      });
+      styledLog(
+        "error",
+        "NEGATIVE Test 13 (duplicate witness target): FAIL — validateGraphResponse should have rejected duplicate witness targets",
+      );
+    } catch (error) {
+      if (error instanceof EngineResponseError) {
+        styledLog(
+          "info",
+          `NEGATIVE Test 13 (duplicate witness target): PASS — code="${error.code}" message="${error.message}"`,
+        );
+      } else {
+        styledLog(
+          "error",
+          `NEGATIVE Test 13 (duplicate witness target): FAIL — expected EngineResponseError, got ${error instanceof Error ? error.constructor.name : typeof error}`,
+        );
+      }
+    }
+  }
+
+  // ------------------------------------------------------------------
+  // Test 14: Missing witness rejected
+  // ------------------------------------------------------------------
+  {
+    const resp: GraphSimulationResponse = {
+      contract_version: CONTRACT_VERSION,
+      request_id: "diag-14",
+      scenario_id: "scen-dev-001",
+      network_reachability: {
+        reachable_asset_ids: ["asset-01", "asset-02"],
+        unreachable_asset_ids: [],
+        witnesses: [
+          { target_asset: "asset-01", source_asset: "asset-01", asset_path: ["asset-01"], edge_path: [] },
+        ],
+      },
+      service_impact: {
+        initially_unavailable_asset_ids: [],
+        impacted_dependent_asset_ids: [],
+        unavailable_asset_ids: [],
+      },
+    };
+    try {
+      validateGraphResponse(resp, {
+        contract_version: CONTRACT_VERSION,
+        request_id: "diag-14",
+        scenario_id: "scen-dev-001",
+        assets: [
+          { id: "asset-01", availability: "available" },
+          { id: "asset-02", availability: "available" },
+        ],
+        network_edges: [],
+        service_dependencies: [],
+        attack_source_asset_ids: ["asset-01"],
+      });
+      styledLog(
+        "error",
+        "NEGATIVE Test 14 (missing witness): FAIL — validateGraphResponse should have rejected missing witness for asset-02",
+      );
+    } catch (error) {
+      if (error instanceof EngineResponseError) {
+        styledLog(
+          "info",
+          `NEGATIVE Test 14 (missing witness): PASS — code="${error.code}" message="${error.message}"`,
+        );
+      } else {
+        styledLog(
+          "error",
+          `NEGATIVE Test 14 (missing witness): FAIL — expected EngineResponseError, got ${error instanceof Error ? error.constructor.name : typeof error}`,
+        );
+      }
+    }
+  }
+
+  // ------------------------------------------------------------------
+  // Test 15: Null witness rejected with EngineResponseError
+  // ------------------------------------------------------------------
+  {
+    const resp: GraphSimulationResponse = {
+      contract_version: CONTRACT_VERSION,
+      request_id: "diag-15",
+      scenario_id: "scen-dev-001",
+      network_reachability: {
+        reachable_asset_ids: ["asset-01"],
+        unreachable_asset_ids: [],
+        witnesses: [null as any],
+      },
+      service_impact: {
+        initially_unavailable_asset_ids: [],
+        impacted_dependent_asset_ids: [],
+        unavailable_asset_ids: [],
+      },
+    };
+    try {
+      validateGraphResponse(resp, {
+        contract_version: CONTRACT_VERSION,
+        request_id: "diag-15",
+        scenario_id: "scen-dev-001",
+        assets: [{ id: "asset-01", availability: "available" }],
+        network_edges: [],
+        service_dependencies: [],
+        attack_source_asset_ids: ["asset-01"],
+      });
+      styledLog(
+        "error",
+        "NEGATIVE Test 15 (null witness): FAIL — validateGraphResponse should have rejected null witness",
+      );
+    } catch (error) {
+      if (error instanceof EngineResponseError) {
+        styledLog(
+          "info",
+          `NEGATIVE Test 15 (null witness): PASS — code="${error.code}" message="${error.message}"`,
+        );
+      } else {
+        styledLog(
+          "error",
+          `NEGATIVE Test 15 (null witness): FAIL — expected EngineResponseError, got ${error instanceof Error ? error.constructor.name : typeof error}: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+    }
+  }
+
+  // ------------------------------------------------------------------
+  // Test 16: Array witness rejected with EngineResponseError
+  // ------------------------------------------------------------------
+  {
+    const resp: GraphSimulationResponse = {
+      contract_version: CONTRACT_VERSION,
+      request_id: "diag-16",
+      scenario_id: "scen-dev-001",
+      network_reachability: {
+        reachable_asset_ids: ["asset-01"],
+        unreachable_asset_ids: [],
+        witnesses: [[] as any],
+      },
+      service_impact: {
+        initially_unavailable_asset_ids: [],
+        impacted_dependent_asset_ids: [],
+        unavailable_asset_ids: [],
+      },
+    };
+    try {
+      validateGraphResponse(resp, {
+        contract_version: CONTRACT_VERSION,
+        request_id: "diag-16",
+        scenario_id: "scen-dev-001",
+        assets: [{ id: "asset-01", availability: "available" }],
+        network_edges: [],
+        service_dependencies: [],
+        attack_source_asset_ids: ["asset-01"],
+      });
+      styledLog(
+        "error",
+        "NEGATIVE Test 16 (array witness): FAIL — validateGraphResponse should have rejected array witness",
+      );
+    } catch (error) {
+      if (error instanceof EngineResponseError) {
+        styledLog(
+          "info",
+          `NEGATIVE Test 16 (array witness): PASS — code="${error.code}" message="${error.message}"`,
+        );
+      } else {
+        styledLog(
+          "error",
+          `NEGATIVE Test 16 (array witness): FAIL — expected EngineResponseError, got ${error instanceof Error ? error.constructor.name : typeof error}: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+    }
+  }
+
+  // ------------------------------------------------------------------
+  // Test 17: Incorrect edge-to-asset path rejected
+  // ------------------------------------------------------------------
+  {
+    const resp: GraphSimulationResponse = {
+      contract_version: CONTRACT_VERSION,
+      request_id: "diag-17",
+      scenario_id: "scen-dev-001",
+      network_reachability: {
+        reachable_asset_ids: ["asset-01", "asset-02"],
+        unreachable_asset_ids: [],
+        witnesses: [
+          {
+            target_asset: "asset-02",
+            source_asset: "asset-01",
+            asset_path: ["asset-01", "asset-02"],
+            edge_path: ["net-99"],
+          },
+        ],
+      },
+      service_impact: {
+        initially_unavailable_asset_ids: [],
+        impacted_dependent_asset_ids: [],
+        unavailable_asset_ids: [],
+      },
+    };
+    try {
+      validateGraphResponse(resp, {
+        contract_version: CONTRACT_VERSION,
+        request_id: "diag-17",
+        scenario_id: "scen-dev-001",
+        assets: [
+          { id: "asset-01", availability: "available" },
+          { id: "asset-02", availability: "available" },
+        ],
+        network_edges: [{ id: "net-01", source_asset_id: "asset-01", target_asset_id: "asset-02", enabled: true }],
+        service_dependencies: [],
+        attack_source_asset_ids: ["asset-01"],
+      });
+      styledLog(
+        "error",
+        "NEGATIVE Test 17 (incorrect edge-to-asset path): FAIL — validateGraphResponse should have rejected mismatched edge-path",
+      );
+    } catch (error) {
+      if (error instanceof EngineResponseError) {
+        styledLog(
+          "info",
+          `NEGATIVE Test 17 (incorrect edge-to-asset path): PASS — code="${error.code}" message="${error.message}"`,
+        );
+      } else {
+        styledLog(
+          "error",
+          `NEGATIVE Test 17 (incorrect edge-to-asset path): FAIL — expected EngineResponseError, got ${error instanceof Error ? error.constructor.name : typeof error}: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+    }
+  }
+
+  // ------------------------------------------------------------------
+  // Test 18: Disabled edge in witness rejected
+  // ------------------------------------------------------------------
+  {
+    const resp: GraphSimulationResponse = {
+      contract_version: CONTRACT_VERSION,
+      request_id: "diag-18",
+      scenario_id: "scen-dev-001",
+      network_reachability: {
+        reachable_asset_ids: ["asset-01", "asset-02"],
+        unreachable_asset_ids: [],
+        witnesses: [
+          {
+            target_asset: "asset-02",
+            source_asset: "asset-01",
+            asset_path: ["asset-01", "asset-02"],
+            edge_path: ["net-01"],
+          },
+        ],
+      },
+      service_impact: {
+        initially_unavailable_asset_ids: [],
+        impacted_dependent_asset_ids: [],
+        unavailable_asset_ids: [],
+      },
+    };
+    try {
+      validateGraphResponse(resp, {
+        contract_version: CONTRACT_VERSION,
+        request_id: "diag-18",
+        scenario_id: "scen-dev-001",
+        assets: [
+          { id: "asset-01", availability: "available" },
+          { id: "asset-02", availability: "available" },
+        ],
+        network_edges: [{ id: "net-01", source_asset_id: "asset-01", target_asset_id: "asset-02", enabled: false }],
+        service_dependencies: [],
+        attack_source_asset_ids: ["asset-01"],
+      });
+      styledLog(
+        "error",
+        "NEGATIVE Test 18 (disabled edge in witness): FAIL — validateGraphResponse should have rejected disabled edge",
+      );
+    } catch (error) {
+      if (error instanceof EngineResponseError) {
+        styledLog(
+          "info",
+          `NEGATIVE Test 18 (disabled edge in witness): PASS — code="${error.code}" message="${error.message}"`,
+        );
+      } else {
+        styledLog(
+          "error",
+          `NEGATIVE Test 18 (disabled edge in witness): FAIL — expected EngineResponseError, got ${error instanceof Error ? error.constructor.name : typeof error}: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+    }
+  }
+
+  // ------------------------------------------------------------------
+  // Test 19: Witness source not in attack-source list rejected
+  // ------------------------------------------------------------------
+  {
+    const resp: GraphSimulationResponse = {
+      contract_version: CONTRACT_VERSION,
+      request_id: "diag-19",
+      scenario_id: "scen-dev-001",
+      network_reachability: {
+        reachable_asset_ids: ["asset-01"],
+        unreachable_asset_ids: [],
+        witnesses: [
+          {
+            target_asset: "asset-01",
+            source_asset: "asset-02",
+            asset_path: ["asset-01"],
+            edge_path: [],
+          },
+        ],
+      },
+      service_impact: {
+        initially_unavailable_asset_ids: [],
+        impacted_dependent_asset_ids: [],
+        unavailable_asset_ids: [],
+      },
+    };
+    try {
+      validateGraphResponse(resp, {
+        contract_version: CONTRACT_VERSION,
+        request_id: "diag-19",
+        scenario_id: "scen-dev-001",
+        assets: [{ id: "asset-01", availability: "available" }],
+        network_edges: [],
+        service_dependencies: [],
+        attack_source_asset_ids: ["asset-01"],
+      });
+      styledLog(
+        "error",
+        "NEGATIVE Test 19 (witness source not in attack sources): FAIL — validateGraphResponse should have rejected witness with source not in attack sources",
+      );
+    } catch (error) {
+      if (error instanceof EngineResponseError) {
+        styledLog(
+          "info",
+          `NEGATIVE Test 19 (witness source not in attack sources): PASS — code="${error.code}" message="${error.message}"`,
+        );
+      } else {
+        styledLog(
+          "error",
+          `NEGATIVE Test 19 (witness source not in attack sources): FAIL — expected EngineResponseError, got ${error instanceof Error ? error.constructor.name : typeof error}: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+    }
+  }
+
+  // ------------------------------------------------------------------
+  // Test 20: Missing initially unavailable asset rejected
+  // ------------------------------------------------------------------
+  {
+    const resp: GraphSimulationResponse = {
+      contract_version: CONTRACT_VERSION,
+      request_id: "diag-20",
+      scenario_id: "scen-dev-001",
+      network_reachability: {
+        reachable_asset_ids: ["asset-01", "asset-02"],
+        unreachable_asset_ids: [],
+        witnesses: [],
+      },
+      service_impact: {
+        initially_unavailable_asset_ids: ["asset-02"],
+        impacted_dependent_asset_ids: [],
+        unavailable_asset_ids: ["asset-02"],
+      },
+    };
+    try {
+      validateGraphResponse(resp, {
+        contract_version: CONTRACT_VERSION,
+        request_id: "diag-20",
+        scenario_id: "scen-dev-001",
+        assets: [
+          { id: "asset-01", availability: "available" },
+          { id: "asset-02", availability: "available" },
+        ],
+        network_edges: [],
+        service_dependencies: [],
+        attack_source_asset_ids: ["asset-01"],
+      });
+      styledLog(
+        "error",
+        "NEGATIVE Test 20 (missing initially unavailable): FAIL — validateGraphResponse should have rejected missing initially unavailable asset",
+      );
+    } catch (error) {
+      if (error instanceof EngineResponseError) {
+        styledLog(
+          "info",
+          `NEGATIVE Test 20 (missing initially unavailable): PASS — code="${error.code}" message="${error.message}"`,
+        );
+      } else {
+        styledLog(
+          "error",
+          `NEGATIVE Test 20 (missing initially unavailable): FAIL — expected EngineResponseError, got ${error instanceof Error ? error.constructor.name : typeof error}: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+    }
+  }
+
+  // ========================================================================
+  // REQUEST VALIDATION TESTS — through validateGraphRequest directly
+  // ========================================================================
+
+  // ------------------------------------------------------------------
+  // Test 21: Null request rejected
+  // ------------------------------------------------------------------
+  {
+    try {
+      validateGraphRequest(null as any);
+      styledLog(
+        "error",
+        "NEGATIVE Test 21 (null request): FAIL — validateGraphRequest should have rejected null request",
+      );
+    } catch (error) {
+      if (error instanceof EngineRequestError) {
+        styledLog(
+          "info",
+          `NEGATIVE Test 21 (null request): PASS — code="${error.code}" message="${error.message}"`,
+        );
+      } else {
+        styledLog(
+          "error",
+          `NEGATIVE Test 21 (null request): FAIL — expected EngineRequestError, got ${error instanceof Error ? error.constructor.name : typeof error}`,
+        );
+      }
+    }
+  }
+
+  // ------------------------------------------------------------------
+  // Test 22: Missing assets array rejected
+  // ------------------------------------------------------------------
+  {
+    try {
+      validateGraphRequest({
+        contract_version: "1.0",
+        request_id: "diag-22",
+        scenario_id: "scen-dev-001",
+        network_edges: [],
+        service_dependencies: [],
+        attack_source_asset_ids: [],
+      } as any);
+      styledLog(
+        "error",
+        "NEGATIVE Test 22 (missing assets array): FAIL — validateGraphRequest should have rejected missing assets array",
+      );
+    } catch (error) {
+      if (error instanceof EngineRequestError) {
+        styledLog(
+          "info",
+          `NEGATIVE Test 22 (missing assets array): PASS — code="${error.code}" message="${error.message}"`,
+        );
+      } else {
+        styledLog(
+          "error",
+          `NEGATIVE Test 22 (missing assets array): FAIL — expected EngineRequestError, got ${error instanceof Error ? error.constructor.name : typeof error}`,
+        );
+      }
+    }
+  }
+
+  // ------------------------------------------------------------------
+  // Test 23: Null asset entry rejected
+  // ------------------------------------------------------------------
+  {
+    try {
+      validateGraphRequest({
+        contract_version: "1.0",
+        request_id: "diag-23",
+        scenario_id: "scen-dev-001",
+        assets: [null as any],
+        network_edges: [],
+        service_dependencies: [],
+        attack_source_asset_ids: [],
+      } as any);
+      styledLog(
+        "error",
+        "NEGATIVE Test 23 (null asset entry): FAIL — validateGraphRequest should have rejected null asset entry",
+      );
+    } catch (error) {
+      if (error instanceof EngineRequestError) {
+        styledLog(
+          "info",
+          `NEGATIVE Test 23 (null asset entry): PASS — code="${error.code}" message="${error.message}"`,
+        );
+      } else {
+        styledLog(
+          "error",
+          `NEGATIVE Test 23 (null asset entry): FAIL — expected EngineRequestError, got ${error instanceof Error ? error.constructor.name : typeof error}`,
+        );
+      }
+    }
+  }
+
+  // ------------------------------------------------------------------
+  // Test 24: Null edge entry rejected
+  // ------------------------------------------------------------------
+  {
+    try {
+      validateGraphRequest({
+        contract_version: "1.0",
+        request_id: "diag-24",
+        scenario_id: "scen-dev-001",
+        assets: [{ id: "asset-01", availability: "available" }],
+        network_edges: [null as any],
+        service_dependencies: [],
+        attack_source_asset_ids: [],
+      } as any);
+      styledLog(
+        "error",
+        "NEGATIVE Test 24 (null edge entry): FAIL — validateGraphRequest should have rejected null edge entry",
+      );
+    } catch (error) {
+      if (error instanceof EngineRequestError) {
+        styledLog(
+          "info",
+          `NEGATIVE Test 24 (null edge entry): PASS — code="${error.code}" message="${error.message}"`,
+        );
+      } else {
+        styledLog(
+          "error",
+          `NEGATIVE Test 24 (null edge entry): FAIL — expected EngineRequestError, got ${error instanceof Error ? error.constructor.name : typeof error}`,
+        );
+      }
+    }
+  }
+
+  // ------------------------------------------------------------------
+  // Test 25: Null dependency entry rejected
+  // ------------------------------------------------------------------
+  {
+    try {
+      validateGraphRequest({
+        contract_version: "1.0",
+        request_id: "diag-25",
+        scenario_id: "scen-dev-001",
+        assets: [{ id: "asset-01", availability: "available" }],
+        network_edges: [],
+        service_dependencies: [null as any],
+        attack_source_asset_ids: [],
+      } as any);
+      styledLog(
+        "error",
+        "NEGATIVE Test 25 (null dependency entry): FAIL — validateGraphRequest should have rejected null dependency entry",
+      );
+    } catch (error) {
+      if (error instanceof EngineRequestError) {
+        styledLog(
+          "info",
+          `NEGATIVE Test 25 (null dependency entry): PASS — code="${error.code}" message="${error.message}"`,
+        );
+      } else {
+        styledLog(
+          "error",
+          `NEGATIVE Test 25 (null dependency entry): FAIL — expected EngineRequestError, got ${error instanceof Error ? error.constructor.name : typeof error}`,
+        );
+      }
+    }
+  }
+
+  // ------------------------------------------------------------------
+  // Test 26: Missing attack_source_asset_ids array rejected
+  // ------------------------------------------------------------------
+  {
+    try {
+      validateGraphRequest({
+        contract_version: "1.0",
+        request_id: "diag-26",
+        scenario_id: "scen-dev-001",
+        assets: [{ id: "asset-01", availability: "available" }],
+        network_edges: [],
+        service_dependencies: [],
+      } as any);
+      styledLog(
+        "error",
+        "NEGATIVE Test 26 (missing attack_source_asset_ids): FAIL — validateGraphRequest should have rejected missing attack_source_asset_ids array",
+      );
+    } catch (error) {
+      if (error instanceof EngineRequestError) {
+        styledLog(
+          "info",
+          `NEGATIVE Test 26 (missing attack_source_asset_ids): PASS — code="${error.code}" message="${error.message}"`,
+        );
+      } else {
+        styledLog(
+          "error",
+          `NEGATIVE Test 26 (missing attack_source_asset_ids): FAIL — expected EngineRequestError, got ${error instanceof Error ? error.constructor.name : typeof error}`,
+        );
+      }
+    }
+  }
+
+  // ------------------------------------------------------------------
+  // Test 27: Backslash-containing identifiers rejected
+  // ------------------------------------------------------------------
+  {
+    try {
+      validateGraphRequest({
+        contract_version: "1.0",
+        request_id: "diag-27",
+        scenario_id: "scen-dev-001",
+        assets: [{ id: "asset\\01", availability: "available" }],
+        network_edges: [],
+        service_dependencies: [],
+        attack_source_asset_ids: ["asset-01"],
+      } as any);
+      styledLog(
+        "error",
+        "NEGATIVE Test 27 (backslash identifier): FAIL — validateGraphRequest should have rejected backslash in identifier",
+      );
+    } catch (error) {
+      if (error instanceof EngineRequestError && error.code === "INVALID_GRAPH") {
+        styledLog(
+          "info",
+          `NEGATIVE Test 27 (backslash identifier): PASS — code="${error.code}" message="${error.message}"`,
+        );
+      } else {
+        styledLog(
+          "error",
+          `NEGATIVE Test 27 (backslash identifier): FAIL — expected EngineRequestError INVALID_GRAPH, got ${error instanceof Error ? error.constructor.name : typeof error}: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+    }
+  }
+
+  // ------------------------------------------------------------------
+  // Test 28: Serialization failure becomes EngineRequestError
+  // ------------------------------------------------------------------
+  {
+    try {
+      const cyclic: any = { contract_version: "1.0", request_id: "diag-28", scenario_id: "scen-dev-001" };
+      cyclic.self = cyclic;
+      simulateGraph(cyclic as GraphSimulationRequest);
+      styledLog(
+        "error",
+        "NEGATIVE Test 28 (serialization failure): FAIL — simulateGraph should have thrown REQUEST_SERIALIZATION_FAILED",
+      );
+    } catch (error) {
+      if (error instanceof EngineRequestError && error.code === "REQUEST_SERIALIZATION_FAILED") {
+        styledLog(
+          "info",
+          `NEGATIVE Test 28 (serialization failure): PASS — code="${error.code}" message="${error.message}"`,
+        );
+      } else {
+        styledLog(
+          "error",
+          `NEGATIVE Test 28 (serialization failure): FAIL — expected EngineRequestError REQUEST_SERIALIZATION_FAILED, got ${error instanceof Error ? error.constructor.name : typeof error}: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
     }
   }
 

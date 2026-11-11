@@ -224,12 +224,31 @@ export function isEngineError(body: unknown): body is EngineErrorBody {
 
 /** Validate that a graph simulation request body conforms to contract v1.0. */
 export function validateGraphRequest(request: GraphSimulationRequest): void {
-  if (request.contract_version !== CONTRACT_VERSION) {
+  // Runtime structural guards — reject malformed input before touching fields
+  if (request === null) {
     throw new EngineRequestError(
-      "UNSUPPORTED_CONTRACT_VERSION",
-      `unsupported contract version '${request.contract_version}', expected '${CONTRACT_VERSION}'`,
+      "INVALID_GRAPH",
+      "request is null",
     );
   }
+  if (typeof request !== "object" || Array.isArray(request)) {
+    throw new EngineRequestError(
+      "INVALID_GRAPH",
+      "request must be a non-null object",
+    );
+  }
+  if (
+    typeof request.contract_version !== "string" ||
+    request.contract_version.length === 0 ||
+    request.contract_version.length > 256 ||
+    !/^[\x20-\x7E]+$/.test(request.contract_version)
+  ) {
+    throw new EngineRequestError(
+      "INVALID_CONTRACT_VERSION",
+      "contract_version must be a non-empty ASCII string of at most 256 characters",
+    );
+  }
+
 
   if (
     typeof request.request_id !== "string" ||
@@ -255,8 +274,20 @@ export function validateGraphRequest(request: GraphSimulationRequest): void {
     );
   }
 
-  // Validate assets
+  // Validate assets array
+  if (!Array.isArray(request.assets)) {
+    throw new EngineRequestError(
+      "INVALID_GRAPH",
+      "assets must be an array",
+    );
+  }
   for (const [i, asset] of request.assets.entries()) {
+    if (asset === null || typeof asset !== "object" || Array.isArray(asset)) {
+      throw new EngineRequestError(
+        "INVALID_GRAPH",
+        `asset at index ${i} must be a non-null object`,
+      );
+    }
     if (
       typeof asset.id !== "string" ||
       asset.id.length === 0 ||
@@ -276,8 +307,20 @@ export function validateGraphRequest(request: GraphSimulationRequest): void {
     }
   }
 
-  // Validate network edges
+  // Validate network edges array
+  if (!Array.isArray(request.network_edges)) {
+    throw new EngineRequestError(
+      "INVALID_GRAPH",
+      "network_edges must be an array",
+    );
+  }
   for (const [i, edge] of request.network_edges.entries()) {
+    if (edge === null || typeof edge !== "object" || Array.isArray(edge)) {
+      throw new EngineRequestError(
+        "INVALID_GRAPH",
+        `network edge at index ${i} must be a non-null object`,
+      );
+    }
     if (
       typeof edge.id !== "string" ||
       edge.id.length === 0 ||
@@ -319,8 +362,20 @@ export function validateGraphRequest(request: GraphSimulationRequest): void {
     }
   }
 
-  // Validate service dependencies
+  // Validate service dependencies array
+  if (!Array.isArray(request.service_dependencies)) {
+    throw new EngineRequestError(
+      "INVALID_GRAPH",
+      "service_dependencies must be an array",
+    );
+  }
   for (const [i, dep] of request.service_dependencies.entries()) {
+    if (dep === null || typeof dep !== "object" || Array.isArray(dep)) {
+      throw new EngineRequestError(
+        "INVALID_GRAPH",
+        `service dependency at index ${i} must be a non-null object`,
+      );
+    }
     if (
       typeof dep.id !== "string" ||
       dep.id.length === 0 ||
@@ -356,7 +411,13 @@ export function validateGraphRequest(request: GraphSimulationRequest): void {
     }
   }
 
-  // Validate attack sources
+  // Validate attack sources array
+  if (!Array.isArray(request.attack_source_asset_ids)) {
+    throw new EngineRequestError(
+      "INVALID_GRAPH",
+      "attack_source_asset_ids must be an array",
+    );
+  }
   for (const [i, source_id] of request.attack_source_asset_ids.entries()) {
     if (
       typeof source_id !== "string" ||
@@ -518,8 +579,29 @@ export function validateGraphResponse(
     }
   }
 
-  // Witnesses sorted by target_asset
-  const witnessTargets = witnesses.map((w) => w.target_asset);
+  // Witnesses sorted by target_asset — validate each witness first before
+  // extracting target_asset, so null/array/non-object entries throw
+  // EngineResponseError instead of TypeError.
+  const witnessTargets: string[] = [];
+  for (const w of witnesses) {
+    if (
+      w === null ||
+      typeof w !== "object" ||
+      Array.isArray(w) ||
+      typeof w.target_asset !== "string" ||
+      typeof w.source_asset !== "string" ||
+      !Array.isArray(w.asset_path) ||
+      !w.asset_path.every((id) => typeof id === "string") ||
+      !Array.isArray(w.edge_path) ||
+      !w.edge_path.every((id) => typeof id === "string")
+    ) {
+      throw new EngineResponseError(
+        "INVALID_RESPONSE_SHAPE",
+        `witness has invalid fields`,
+      );
+    }
+    witnessTargets.push(w.target_asset);
+  }
   const witnessesSorted = [...witnessTargets].sort();
   if (
     witnessTargets.join("\n") !== witnessesSorted.join("\n")
