@@ -450,3 +450,235 @@ pub fn simulate_graph(
         },
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn valid_request_json() -> String {
+        serde_json::to_string(&GraphSimulationRequest {
+            contract_version: "1.0".to_string(),
+            request_id: "req-1".to_string(),
+            scenario_id: "scen-1".to_string(),
+            assets: vec![
+                Asset {
+                    id: "A".to_string(),
+                    availability: "available".to_string(),
+                },
+                Asset {
+                    id: "B".to_string(),
+                    availability: "available".to_string(),
+                },
+            ],
+            network_edges: vec![NetworkEdge {
+                id: "e1".to_string(),
+                source_asset_id: "A".to_string(),
+                target_asset_id: "B".to_string(),
+                enabled: true,
+            }],
+            service_dependencies: vec![],
+            attack_source_asset_ids: vec!["A".to_string()],
+        })
+        .unwrap()
+    }
+
+    fn parse_response_body(body: &str) -> serde_json::Value {
+        serde_json::from_str(body).expect("response must be valid JSON")
+    }
+
+    #[test]
+    fn simulate_graph_json_missing_asset_id_does_not_panic() {
+        let input = serde_json::json!({
+            "contract_version": "1.0",
+            "request_id": "req-1",
+            "scenario_id": "scen-1",
+            "assets": [{"availability": "available"}],
+            "network_edges": [],
+            "service_dependencies": [],
+            "attack_source_asset_ids": []
+        })
+        .to_string();
+
+        let result = std::panic::catch_unwind(|| simulate_graph_json(&input));
+        assert!(result.is_ok(), "simulate_graph_json must not panic");
+
+        let body = result.unwrap();
+        let parsed = parse_response_body(&body);
+        assert_eq!(
+            parsed.get("code").and_then(|v| v.as_str()),
+            Some("MALFORMED_JSON")
+        );
+    }
+
+    #[test]
+    fn simulate_graph_json_non_object_asset_entry_does_not_panic() {
+        let input = serde_json::json!({
+            "contract_version": "1.0",
+            "request_id": "req-1",
+            "scenario_id": "scen-1",
+            "assets": ["not an object"],
+            "network_edges": [],
+            "service_dependencies": [],
+            "attack_source_asset_ids": []
+        })
+        .to_string();
+
+        let result = std::panic::catch_unwind(|| simulate_graph_json(&input));
+        assert!(result.is_ok(), "simulate_graph_json must not panic");
+
+        let body = result.unwrap();
+        let parsed = parse_response_body(&body);
+        assert_eq!(
+            parsed.get("code").and_then(|v| v.as_str()),
+            Some("MALFORMED_JSON")
+        );
+    }
+
+    #[test]
+    fn simulate_graph_json_non_object_edge_entry_does_not_panic() {
+        let input = serde_json::json!({
+            "contract_version": "1.0",
+            "request_id": "req-1",
+            "scenario_id": "scen-1",
+            "assets": [{"id": "A", "availability": "available"}],
+            "network_edges": ["not an object"],
+            "service_dependencies": [],
+            "attack_source_asset_ids": []
+        })
+        .to_string();
+
+        let result = std::panic::catch_unwind(|| simulate_graph_json(&input));
+        assert!(result.is_ok(), "simulate_graph_json must not panic");
+
+        let body = result.unwrap();
+        let parsed = parse_response_body(&body);
+        assert_eq!(
+            parsed.get("code").and_then(|v| v.as_str()),
+            Some("MALFORMED_JSON")
+        );
+    }
+
+    #[test]
+    fn simulate_graph_json_non_object_dependency_entry_does_not_panic() {
+        let input = serde_json::json!({
+            "contract_version": "1.0",
+            "request_id": "req-1",
+            "scenario_id": "scen-1",
+            "assets": [{"id": "A", "availability": "available"}],
+            "network_edges": [],
+            "service_dependencies": ["not an object"],
+            "attack_source_asset_ids": []
+        })
+        .to_string();
+
+        let result = std::panic::catch_unwind(|| simulate_graph_json(&input));
+        assert!(result.is_ok(), "simulate_graph_json must not panic");
+
+        let body = result.unwrap();
+        let parsed = parse_response_body(&body);
+        assert_eq!(
+            parsed.get("code").and_then(|v| v.as_str()),
+            Some("MALFORMED_JSON")
+        );
+    }
+
+    #[test]
+    fn simulate_graph_json_wrong_nested_field_type_does_not_panic() {
+        let input = serde_json::json!({
+            "contract_version": "1.0",
+            "request_id": "req-1",
+            "scenario_id": "scen-1",
+            "assets": [{"id": "A", "availability": 123}],
+            "network_edges": [],
+            "service_dependencies": [],
+            "attack_source_asset_ids": []
+        })
+        .to_string();
+
+        let result = std::panic::catch_unwind(|| simulate_graph_json(&input));
+        assert!(result.is_ok(), "simulate_graph_json must not panic");
+
+        let body = result.unwrap();
+        let parsed = parse_response_body(&body);
+        assert_eq!(
+            parsed.get("code").and_then(|v| v.as_str()),
+            Some("MALFORMED_JSON")
+        );
+    }
+
+    #[test]
+    fn simulate_graph_json_malformed_nested_with_unsupported_version_wins() {
+        // Malformed nested structure should be rejected BEFORE
+        // unsupported contract version (first-failure-wins precedence).
+        let input = serde_json::json!({
+            "contract_version": "2.0",
+            "request_id": "req-1",
+            "scenario_id": "scen-1",
+            "assets": [{"id": "A", "availability": "available", "extra_field": 1}],
+            "network_edges": [],
+            "service_dependencies": [],
+            "attack_source_asset_ids": []
+        })
+        .to_string();
+
+        let result = std::panic::catch_unwind(|| simulate_graph_json(&input));
+        assert!(result.is_ok(), "simulate_graph_json must not panic");
+
+        let body = result.unwrap();
+        let parsed = parse_response_body(&body);
+        assert_eq!(
+            parsed.get("code").and_then(|v| v.as_str()),
+            Some("MALFORMED_JSON")
+        );
+    }
+
+    #[test]
+    fn simulate_graph_json_valid_request_returns_response_structure() {
+        let input = valid_request_json();
+
+        let result = std::panic::catch_unwind(|| simulate_graph_json(&input));
+        assert!(result.is_ok(), "simulate_graph_json must not panic");
+
+        let body = result.unwrap();
+        let parsed = parse_response_body(&body);
+        assert_eq!(
+            parsed.get("code").and_then(|v| v.as_str()),
+            None,
+            "valid request must not return an error code"
+        );
+        assert_eq!(
+            parsed.get("contract_version").and_then(|v| v.as_str()),
+            Some("1.0")
+        );
+        assert_eq!(
+            parsed.get("request_id").and_then(|v| v.as_str()),
+            Some("req-1")
+        );
+        assert_eq!(
+            parsed.get("scenario_id").and_then(|v| v.as_str()),
+            Some("scen-1")
+        );
+        assert!(parsed.get("network_reachability").is_some());
+        assert!(parsed.get("service_impact").is_some());
+    }
+
+    #[test]
+    fn health_check_json_preserved() {
+        let input = serde_json::json!({
+            "contract_version": "1.0",
+            "request_id": "req-1"
+        })
+        .to_string();
+
+        let result = std::panic::catch_unwind(|| health_check_json(&input));
+        assert!(result.is_ok(), "health_check_json must not panic");
+
+        let body = result.unwrap();
+        let parsed = parse_response_body(&body);
+        assert_eq!(parsed.get("status").and_then(|v| v.as_str()), Some("ok"));
+        assert_eq!(
+            parsed.get("engine").and_then(|v| v.as_str()),
+            Some("security-engine")
+        );
+    }
+}
