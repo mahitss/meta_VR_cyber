@@ -701,6 +701,7 @@ export async function runWasmDevDiagnostic(): Promise<void> {
 
   // ------------------------------------------------------------------
   // Test 17: Incorrect edge-to-asset path rejected
+  // Uses an existing edge whose endpoints do not match the witness path.
   // ------------------------------------------------------------------
   {
     const resp: GraphSimulationResponse = {
@@ -715,7 +716,7 @@ export async function runWasmDevDiagnostic(): Promise<void> {
             target_asset: "asset-02",
             source_asset: "asset-01",
             asset_path: ["asset-01", "asset-02"],
-            edge_path: ["net-99"],
+            edge_path: ["net-01"],
           },
         ],
       },
@@ -734,7 +735,9 @@ export async function runWasmDevDiagnostic(): Promise<void> {
           { id: "asset-01", availability: "available" },
           { id: "asset-02", availability: "available" },
         ],
-        network_edges: [{ id: "net-01", source_asset_id: "asset-01", target_asset_id: "asset-02", enabled: true }],
+        // net-01 connects asset-01 -> asset-02, but witness claims net-01
+        // connects asset-02 -> asset-01 (swapped endpoints).
+        network_edges: [{ id: "net-01", source_asset_id: "asset-02", target_asset_id: "asset-01", enabled: true }],
         service_dependencies: [],
         attack_source_asset_ids: ["asset-01"],
       });
@@ -817,6 +820,9 @@ export async function runWasmDevDiagnostic(): Promise<void> {
 
   // ------------------------------------------------------------------
   // Test 19: Witness source not in attack-source list rejected
+  // Source is a valid request asset, asset_path starts with source,
+  // target matches final path element, edges are valid/enabled/connected,
+  // but source is absent from attack_source_asset_ids.
   // ------------------------------------------------------------------
   {
     const resp: GraphSimulationResponse = {
@@ -825,11 +831,11 @@ export async function runWasmDevDiagnostic(): Promise<void> {
       scenario_id: "scen-dev-001",
       network_reachability: {
         reachable_asset_ids: ["asset-01"],
-        unreachable_asset_ids: [],
+        unreachable_asset_ids: ["asset-02"],
         witnesses: [
           {
             target_asset: "asset-01",
-            source_asset: "asset-02",
+            source_asset: "asset-01",
             asset_path: ["asset-01"],
             edge_path: [],
           },
@@ -846,10 +852,14 @@ export async function runWasmDevDiagnostic(): Promise<void> {
         contract_version: CONTRACT_VERSION,
         request_id: "diag-19",
         scenario_id: "scen-dev-001",
-        assets: [{ id: "asset-01", availability: "available" }],
+        assets: [
+          { id: "asset-01", availability: "available" },
+          { id: "asset-02", availability: "available" },
+        ],
         network_edges: [],
         service_dependencies: [],
-        attack_source_asset_ids: ["asset-01"],
+        // asset-01 is NOT in attack_source_asset_ids -> should be rejected
+        attack_source_asset_ids: ["asset-02"],
       });
       styledLog(
         "error",
@@ -872,6 +882,8 @@ export async function runWasmDevDiagnostic(): Promise<void> {
 
   // ------------------------------------------------------------------
   // Test 20: Missing initially unavailable asset rejected
+  // asset-02 is marked unavailable in the request but omitted from
+  // response's initially_unavailable_asset_ids.
   // ------------------------------------------------------------------
   {
     const resp: GraphSimulationResponse = {
@@ -879,12 +891,20 @@ export async function runWasmDevDiagnostic(): Promise<void> {
       request_id: "diag-20",
       scenario_id: "scen-dev-001",
       network_reachability: {
-        reachable_asset_ids: ["asset-01", "asset-02"],
-        unreachable_asset_ids: [],
-        witnesses: [],
+        reachable_asset_ids: ["asset-01"],
+        unreachable_asset_ids: ["asset-02"],
+        witnesses: [
+          {
+            target_asset: "asset-01",
+            source_asset: "asset-01",
+            asset_path: ["asset-01"],
+            edge_path: [],
+          },
+        ],
       },
       service_impact: {
-        initially_unavailable_asset_ids: ["asset-02"],
+        // asset-02 is missing from initially_unavailable_asset_ids
+        initially_unavailable_asset_ids: [],
         impacted_dependent_asset_ids: [],
         unavailable_asset_ids: ["asset-02"],
       },
@@ -896,7 +916,7 @@ export async function runWasmDevDiagnostic(): Promise<void> {
         scenario_id: "scen-dev-001",
         assets: [
           { id: "asset-01", availability: "available" },
-          { id: "asset-02", availability: "available" },
+          { id: "asset-02", availability: "unavailable" },
         ],
         network_edges: [],
         service_dependencies: [],
@@ -921,43 +941,159 @@ export async function runWasmDevDiagnostic(): Promise<void> {
     }
   }
 
-  // ========================================================================
-  // REQUEST VALIDATION TESTS — through validateGraphRequest directly
-  // ========================================================================
-
   // ------------------------------------------------------------------
-  // Test 21: Null request rejected
+  // Test 21: Unknown ID in reachable_asset_ids rejected
   // ------------------------------------------------------------------
   {
+    const resp: GraphSimulationResponse = {
+      contract_version: CONTRACT_VERSION,
+      request_id: "diag-21",
+      scenario_id: "scen-dev-001",
+      network_reachability: {
+        reachable_asset_ids: ["asset-01", "asset-99"], // asset-99 not in request
+        unreachable_asset_ids: [],
+        witnesses: [
+          {
+            target_asset: "asset-01",
+            source_asset: "asset-01",
+            asset_path: ["asset-01"],
+            edge_path: [],
+          },
+        ],
+      },
+      service_impact: {
+        initially_unavailable_asset_ids: [],
+        impacted_dependent_asset_ids: [],
+        unavailable_asset_ids: [],
+      },
+    };
     try {
-      validateGraphRequest(null as any);
+      validateGraphResponse(resp, {
+        contract_version: CONTRACT_VERSION,
+        request_id: "diag-21",
+        scenario_id: "scen-dev-001",
+        assets: [
+          { id: "asset-01", availability: "available" },
+          { id: "asset-02", availability: "available" },
+        ],
+        network_edges: [],
+        service_dependencies: [],
+        attack_source_asset_ids: ["asset-01"],
+      });
       styledLog(
         "error",
-        "NEGATIVE Test 21 (null request): FAIL — validateGraphRequest should have rejected null request",
+        "NEGATIVE Test 21 (unknown reachable ID): FAIL — validateGraphResponse should have rejected unknown ID in reachable_asset_ids",
       );
     } catch (error) {
-      if (error instanceof EngineRequestError) {
+      if (error instanceof EngineResponseError) {
         styledLog(
           "info",
-          `NEGATIVE Test 21 (null request): PASS — code="${error.code}" message="${error.message}"`,
+          `NEGATIVE Test 21 (unknown reachable ID): PASS — code="${error.code}" message="${error.message}"`,
         );
       } else {
         styledLog(
           "error",
-          `NEGATIVE Test 21 (null request): FAIL — expected EngineRequestError, got ${error instanceof Error ? error.constructor.name : typeof error}`,
+          `NEGATIVE Test 21 (unknown reachable ID): FAIL — expected EngineResponseError, got ${error instanceof Error ? error.constructor.name : typeof error}: ${error instanceof Error ? error.message : String(error)}`,
         );
       }
     }
   }
 
   // ------------------------------------------------------------------
-  // Test 22: Missing assets array rejected
+  // Test 22: Unknown ID in unreachable_asset_ids rejected
+  // ------------------------------------------------------------------
+  {
+    const resp: GraphSimulationResponse = {
+      contract_version: CONTRACT_VERSION,
+      request_id: "diag-22",
+      scenario_id: "scen-dev-001",
+      network_reachability: {
+        reachable_asset_ids: ["asset-01"],
+        unreachable_asset_ids: ["asset-99"], // asset-99 not in request
+        witnesses: [
+          {
+            target_asset: "asset-01",
+            source_asset: "asset-01",
+            asset_path: ["asset-01"],
+            edge_path: [],
+          },
+        ],
+      },
+      service_impact: {
+        initially_unavailable_asset_ids: [],
+        impacted_dependent_asset_ids: [],
+        unavailable_asset_ids: [],
+      },
+    };
+    try {
+      validateGraphResponse(resp, {
+        contract_version: CONTRACT_VERSION,
+        request_id: "diag-22",
+        scenario_id: "scen-dev-001",
+        assets: [
+          { id: "asset-01", availability: "available" },
+          { id: "asset-02", availability: "available" },
+        ],
+        network_edges: [],
+        service_dependencies: [],
+        attack_source_asset_ids: ["asset-01"],
+      });
+      styledLog(
+        "error",
+        "NEGATIVE Test 22 (unknown unreachable ID): FAIL — validateGraphResponse should have rejected unknown ID in unreachable_asset_ids",
+      );
+    } catch (error) {
+      if (error instanceof EngineResponseError) {
+        styledLog(
+          "info",
+          `NEGATIVE Test 22 (unknown unreachable ID): PASS — code="${error.code}" message="${error.message}"`,
+        );
+      } else {
+        styledLog(
+          "error",
+          `NEGATIVE Test 22 (unknown unreachable ID): FAIL — expected EngineResponseError, got ${error instanceof Error ? error.constructor.name : typeof error}: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+    }
+  }
+
+  // ========================================================================
+  // REQUEST VALIDATION TESTS — through validateGraphRequest directly
+  // ========================================================================
+
+  // ------------------------------------------------------------------
+  // Test 23: Null request rejected
+  // ------------------------------------------------------------------
+  {
+    try {
+      validateGraphRequest(null as any);
+      styledLog(
+        "error",
+        "NEGATIVE Test 23 (null request): FAIL — validateGraphRequest should have rejected null request",
+      );
+    } catch (error) {
+      if (error instanceof EngineRequestError) {
+        styledLog(
+          "info",
+          `NEGATIVE Test 23 (null request): PASS — code="${error.code}" message="${error.message}"`,
+        );
+      } else {
+        styledLog(
+          "error",
+          `NEGATIVE Test 23 (null request): FAIL — expected EngineRequestError, got ${error instanceof Error ? error.constructor.name : typeof error}`,
+        );
+      }
+    }
+  }
+
+  // ------------------------------------------------------------------
+  // Test 24: Missing assets array rejected
   // ------------------------------------------------------------------
   {
     try {
       validateGraphRequest({
         contract_version: "1.0",
-        request_id: "diag-22",
+        request_id: "diag-24",
         scenario_id: "scen-dev-001",
         network_edges: [],
         service_dependencies: [],
@@ -965,31 +1101,31 @@ export async function runWasmDevDiagnostic(): Promise<void> {
       } as any);
       styledLog(
         "error",
-        "NEGATIVE Test 22 (missing assets array): FAIL — validateGraphRequest should have rejected missing assets array",
+        "NEGATIVE Test 24 (missing assets array): FAIL — validateGraphRequest should have rejected missing assets array",
       );
     } catch (error) {
       if (error instanceof EngineRequestError) {
         styledLog(
           "info",
-          `NEGATIVE Test 22 (missing assets array): PASS — code="${error.code}" message="${error.message}"`,
+          `NEGATIVE Test 24 (missing assets array): PASS — code="${error.code}" message="${error.message}"`,
         );
       } else {
         styledLog(
           "error",
-          `NEGATIVE Test 22 (missing assets array): FAIL — expected EngineRequestError, got ${error instanceof Error ? error.constructor.name : typeof error}`,
+          `NEGATIVE Test 24 (missing assets array): FAIL — expected EngineRequestError, got ${error instanceof Error ? error.constructor.name : typeof error}`,
         );
       }
     }
   }
 
   // ------------------------------------------------------------------
-  // Test 23: Null asset entry rejected
+  // Test 25: Null asset entry rejected
   // ------------------------------------------------------------------
   {
     try {
       validateGraphRequest({
         contract_version: "1.0",
-        request_id: "diag-23",
+        request_id: "diag-25",
         scenario_id: "scen-dev-001",
         assets: [null as any],
         network_edges: [],
@@ -998,91 +1134,25 @@ export async function runWasmDevDiagnostic(): Promise<void> {
       } as any);
       styledLog(
         "error",
-        "NEGATIVE Test 23 (null asset entry): FAIL — validateGraphRequest should have rejected null asset entry",
+        "NEGATIVE Test 25 (null asset entry): FAIL — validateGraphRequest should have rejected null asset entry",
       );
     } catch (error) {
       if (error instanceof EngineRequestError) {
         styledLog(
           "info",
-          `NEGATIVE Test 23 (null asset entry): PASS — code="${error.code}" message="${error.message}"`,
+          `NEGATIVE Test 25 (null asset entry): PASS — code="${error.code}" message="${error.message}"`,
         );
       } else {
         styledLog(
           "error",
-          `NEGATIVE Test 23 (null asset entry): FAIL — expected EngineRequestError, got ${error instanceof Error ? error.constructor.name : typeof error}`,
+          `NEGATIVE Test 25 (null asset entry): FAIL — expected EngineRequestError, got ${error instanceof Error ? error.constructor.name : typeof error}`,
         );
       }
     }
   }
 
   // ------------------------------------------------------------------
-  // Test 24: Null edge entry rejected
-  // ------------------------------------------------------------------
-  {
-    try {
-      validateGraphRequest({
-        contract_version: "1.0",
-        request_id: "diag-24",
-        scenario_id: "scen-dev-001",
-        assets: [{ id: "asset-01", availability: "available" }],
-        network_edges: [null as any],
-        service_dependencies: [],
-        attack_source_asset_ids: [],
-      } as any);
-      styledLog(
-        "error",
-        "NEGATIVE Test 24 (null edge entry): FAIL — validateGraphRequest should have rejected null edge entry",
-      );
-    } catch (error) {
-      if (error instanceof EngineRequestError) {
-        styledLog(
-          "info",
-          `NEGATIVE Test 24 (null edge entry): PASS — code="${error.code}" message="${error.message}"`,
-        );
-      } else {
-        styledLog(
-          "error",
-          `NEGATIVE Test 24 (null edge entry): FAIL — expected EngineRequestError, got ${error instanceof Error ? error.constructor.name : typeof error}`,
-        );
-      }
-    }
-  }
-
-  // ------------------------------------------------------------------
-  // Test 25: Null dependency entry rejected
-  // ------------------------------------------------------------------
-  {
-    try {
-      validateGraphRequest({
-        contract_version: "1.0",
-        request_id: "diag-25",
-        scenario_id: "scen-dev-001",
-        assets: [{ id: "asset-01", availability: "available" }],
-        network_edges: [],
-        service_dependencies: [null as any],
-        attack_source_asset_ids: [],
-      } as any);
-      styledLog(
-        "error",
-        "NEGATIVE Test 25 (null dependency entry): FAIL — validateGraphRequest should have rejected null dependency entry",
-      );
-    } catch (error) {
-      if (error instanceof EngineRequestError) {
-        styledLog(
-          "info",
-          `NEGATIVE Test 25 (null dependency entry): PASS — code="${error.code}" message="${error.message}"`,
-        );
-      } else {
-        styledLog(
-          "error",
-          `NEGATIVE Test 25 (null dependency entry): FAIL — expected EngineRequestError, got ${error instanceof Error ? error.constructor.name : typeof error}`,
-        );
-      }
-    }
-  }
-
-  // ------------------------------------------------------------------
-  // Test 26: Missing attack_source_asset_ids array rejected
+  // Test 26: Null edge entry rejected
   // ------------------------------------------------------------------
   {
     try {
@@ -1091,36 +1161,102 @@ export async function runWasmDevDiagnostic(): Promise<void> {
         request_id: "diag-26",
         scenario_id: "scen-dev-001",
         assets: [{ id: "asset-01", availability: "available" }],
-        network_edges: [],
+        network_edges: [null as any],
         service_dependencies: [],
+        attack_source_asset_ids: [],
       } as any);
       styledLog(
         "error",
-        "NEGATIVE Test 26 (missing attack_source_asset_ids): FAIL — validateGraphRequest should have rejected missing attack_source_asset_ids array",
+        "NEGATIVE Test 26 (null edge entry): FAIL — validateGraphRequest should have rejected null edge entry",
       );
     } catch (error) {
       if (error instanceof EngineRequestError) {
         styledLog(
           "info",
-          `NEGATIVE Test 26 (missing attack_source_asset_ids): PASS — code="${error.code}" message="${error.message}"`,
+          `NEGATIVE Test 26 (null edge entry): PASS — code="${error.code}" message="${error.message}"`,
         );
       } else {
         styledLog(
           "error",
-          `NEGATIVE Test 26 (missing attack_source_asset_ids): FAIL — expected EngineRequestError, got ${error instanceof Error ? error.constructor.name : typeof error}`,
+          `NEGATIVE Test 26 (null edge entry): FAIL — expected EngineRequestError, got ${error instanceof Error ? error.constructor.name : typeof error}`,
         );
       }
     }
   }
 
   // ------------------------------------------------------------------
-  // Test 27: Backslash-containing identifiers rejected
+  // Test 27: Null dependency entry rejected
   // ------------------------------------------------------------------
   {
     try {
       validateGraphRequest({
         contract_version: "1.0",
         request_id: "diag-27",
+        scenario_id: "scen-dev-001",
+        assets: [{ id: "asset-01", availability: "available" }],
+        network_edges: [],
+        service_dependencies: [null as any],
+        attack_source_asset_ids: [],
+      } as any);
+      styledLog(
+        "error",
+        "NEGATIVE Test 27 (null dependency entry): FAIL — validateGraphRequest should have rejected null dependency entry",
+      );
+    } catch (error) {
+      if (error instanceof EngineRequestError) {
+        styledLog(
+          "info",
+          `NEGATIVE Test 27 (null dependency entry): PASS — code="${error.code}" message="${error.message}"`,
+        );
+      } else {
+        styledLog(
+          "error",
+          `NEGATIVE Test 27 (null dependency entry): FAIL — expected EngineRequestError, got ${error instanceof Error ? error.constructor.name : typeof error}`,
+        );
+      }
+    }
+  }
+
+  // ------------------------------------------------------------------
+  // Test 28: Missing attack_source_asset_ids array rejected
+  // ------------------------------------------------------------------
+  {
+    try {
+      validateGraphRequest({
+        contract_version: "1.0",
+        request_id: "diag-28",
+        scenario_id: "scen-dev-001",
+        assets: [{ id: "asset-01", availability: "available" }],
+        network_edges: [],
+        service_dependencies: [],
+      } as any);
+      styledLog(
+        "error",
+        "NEGATIVE Test 28 (missing attack_source_asset_ids): FAIL — validateGraphRequest should have rejected missing attack_source_asset_ids array",
+      );
+    } catch (error) {
+      if (error instanceof EngineRequestError) {
+        styledLog(
+          "info",
+          `NEGATIVE Test 28 (missing attack_source_asset_ids): PASS — code="${error.code}" message="${error.message}"`,
+        );
+      } else {
+        styledLog(
+          "error",
+          `NEGATIVE Test 28 (missing attack_source_asset_ids): FAIL — expected EngineRequestError, got ${error instanceof Error ? error.constructor.name : typeof error}`,
+        );
+      }
+    }
+  }
+
+  // ------------------------------------------------------------------
+  // Test 29: Backslash-containing identifiers rejected
+  // ------------------------------------------------------------------
+  {
+    try {
+      validateGraphRequest({
+        contract_version: "1.0",
+        request_id: "diag-29",
         scenario_id: "scen-dev-001",
         assets: [{ id: "asset\\01", availability: "available" }],
         network_edges: [],
@@ -1129,45 +1265,57 @@ export async function runWasmDevDiagnostic(): Promise<void> {
       } as any);
       styledLog(
         "error",
-        "NEGATIVE Test 27 (backslash identifier): FAIL — validateGraphRequest should have rejected backslash in identifier",
+        "NEGATIVE Test 29 (backslash identifier): FAIL — validateGraphRequest should have rejected backslash in identifier",
       );
     } catch (error) {
       if (error instanceof EngineRequestError && error.code === "INVALID_GRAPH") {
         styledLog(
           "info",
-          `NEGATIVE Test 27 (backslash identifier): PASS — code="${error.code}" message="${error.message}"`,
+          `NEGATIVE Test 29 (backslash identifier): PASS — code="${error.code}" message="${error.message}"`,
         );
       } else {
         styledLog(
           "error",
-          `NEGATIVE Test 27 (backslash identifier): FAIL — expected EngineRequestError INVALID_GRAPH, got ${error instanceof Error ? error.constructor.name : typeof error}: ${error instanceof Error ? error.message : String(error)}`,
+          `NEGATIVE Test 29 (backslash identifier): FAIL — expected EngineRequestError INVALID_GRAPH, got ${error instanceof Error ? error.constructor.name : typeof error}: ${error instanceof Error ? error.message : String(error)}`,
         );
       }
     }
   }
 
   // ------------------------------------------------------------------
-  // Test 28: Serialization failure becomes EngineRequestError
+  // Test 30: Serialization failure becomes EngineRequestError
+  // Structurally valid request (all required collections present),
+  // then a circular reference is added so JSON.stringify fails.
+  // This proves: request validation passes -> serialization attempted
+  // -> serialization fails -> REQUEST_SERIALIZATION_FAILED thrown.
   // ------------------------------------------------------------------
   {
     try {
-      const cyclic: any = { contract_version: "1.0", request_id: "diag-28", scenario_id: "scen-dev-001" };
+      const cyclic: any = {
+        contract_version: "1.0",
+        request_id: "diag-30",
+        scenario_id: "scen-dev-001",
+        assets: [{ id: "asset-01", availability: "available" }],
+        network_edges: [],
+        service_dependencies: [],
+        attack_source_asset_ids: ["asset-01"],
+      };
       cyclic.self = cyclic;
       simulateGraph(cyclic as GraphSimulationRequest);
       styledLog(
         "error",
-        "NEGATIVE Test 28 (serialization failure): FAIL — simulateGraph should have thrown REQUEST_SERIALIZATION_FAILED",
+        "NEGATIVE Test 30 (serialization failure): FAIL — simulateGraph should have thrown REQUEST_SERIALIZATION_FAILED",
       );
     } catch (error) {
       if (error instanceof EngineRequestError && error.code === "REQUEST_SERIALIZATION_FAILED") {
         styledLog(
           "info",
-          `NEGATIVE Test 28 (serialization failure): PASS — code="${error.code}" message="${error.message}"`,
+          `NEGATIVE Test 30 (serialization failure): PASS — code="${error.code}" message="${error.message}"`,
         );
       } else {
         styledLog(
           "error",
-          `NEGATIVE Test 28 (serialization failure): FAIL — expected EngineRequestError REQUEST_SERIALIZATION_FAILED, got ${error instanceof Error ? error.constructor.name : typeof error}: ${error instanceof Error ? error.message : String(error)}`,
+          `NEGATIVE Test 30 (serialization failure): FAIL — expected EngineRequestError REQUEST_SERIALIZATION_FAILED, got ${error instanceof Error ? error.constructor.name : typeof error}: ${error instanceof Error ? error.message : String(error)}`,
         );
       }
     }

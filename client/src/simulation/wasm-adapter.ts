@@ -579,6 +579,26 @@ export function validateGraphResponse(
     }
   }
 
+  // Every reachable ID must refer to a requested asset
+  const requestAssetIds = new Set(request.assets.map((a) => a.id));
+  for (const id of reachable_ids) {
+    if (!requestAssetIds.has(id)) {
+      throw new EngineResponseError(
+        "INVALID_RESPONSE_SHAPE",
+        `reachable_asset_ids contains unknown asset '${id}'`,
+      );
+    }
+  }
+  // Every unreachable ID must refer to a requested asset
+  for (const id of unreachable_ids) {
+    if (!requestAssetIds.has(id)) {
+      throw new EngineResponseError(
+        "INVALID_RESPONSE_SHAPE",
+        `unreachable_asset_ids contains unknown asset '${id}'`,
+      );
+    }
+  }
+
   // Witnesses sorted by target_asset — validate each witness first before
   // extracting target_asset, so null/array/non-object entries throw
   // EngineResponseError instead of TypeError.
