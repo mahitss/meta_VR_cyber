@@ -702,6 +702,8 @@ export async function runWasmDevDiagnostic(): Promise<void> {
   // ------------------------------------------------------------------
   // Test 17: Incorrect edge-to-asset path rejected
   // Uses an existing edge whose endpoints do not match the witness path.
+  // Two witnesses: valid self-witness for asset-01, then asset-02 witness
+  // whose edge endpoints are reversed.
   // ------------------------------------------------------------------
   {
     const resp: GraphSimulationResponse = {
@@ -712,6 +714,12 @@ export async function runWasmDevDiagnostic(): Promise<void> {
         reachable_asset_ids: ["asset-01", "asset-02"],
         unreachable_asset_ids: [],
         witnesses: [
+          {
+            target_asset: "asset-01",
+            source_asset: "asset-01",
+            asset_path: ["asset-01"],
+            edge_path: [],
+          },
           {
             target_asset: "asset-02",
             source_asset: "asset-01",
@@ -735,8 +743,8 @@ export async function runWasmDevDiagnostic(): Promise<void> {
           { id: "asset-01", availability: "available" },
           { id: "asset-02", availability: "available" },
         ],
-        // net-01 connects asset-01 -> asset-02, but witness claims net-01
-        // connects asset-02 -> asset-01 (swapped endpoints).
+        // net-01 connects asset-02 -> asset-01, but witness claims net-01
+        // connects asset-01 -> asset-02 (swapped endpoints).
         network_edges: [{ id: "net-01", source_asset_id: "asset-02", target_asset_id: "asset-01", enabled: true }],
         service_dependencies: [],
         attack_source_asset_ids: ["asset-01"],
@@ -746,7 +754,11 @@ export async function runWasmDevDiagnostic(): Promise<void> {
         "NEGATIVE Test 17 (incorrect edge-to-asset path): FAIL — validateGraphResponse should have rejected mismatched edge-path",
       );
     } catch (error) {
-      if (error instanceof EngineResponseError) {
+      if (
+        error instanceof EngineResponseError &&
+        error.code === "INVALID_RESPONSE_SHAPE" &&
+        error.message === "edge 'net-01' source 'asset-02' does not match asset_path[0] 'asset-01'"
+      ) {
         styledLog(
           "info",
           `NEGATIVE Test 17 (incorrect edge-to-asset path): PASS — code="${error.code}" message="${error.message}"`,
@@ -754,7 +766,7 @@ export async function runWasmDevDiagnostic(): Promise<void> {
       } else {
         styledLog(
           "error",
-          `NEGATIVE Test 17 (incorrect edge-to-asset path): FAIL — expected EngineResponseError, got ${error instanceof Error ? error.constructor.name : typeof error}: ${error instanceof Error ? error.message : String(error)}`,
+          `NEGATIVE Test 17 (incorrect edge-to-asset path): FAIL — expected EngineResponseError code=INVALID_RESPONSE_SHAPE message="edge 'net-01' source 'asset-02' does not match asset_path[0] 'asset-01'", got ${error instanceof Error ? error.constructor.name : typeof error}${(error as any).code ? ` code="${(error as any).code}"` : ""}: ${error instanceof Error ? error.message : String(error)}`,
         );
       }
     }
@@ -762,6 +774,8 @@ export async function runWasmDevDiagnostic(): Promise<void> {
 
   // ------------------------------------------------------------------
   // Test 18: Disabled edge in witness rejected
+  // Two witnesses: valid self-witness for asset-01, then asset-02 witness
+  // whose edge is disabled.
   // ------------------------------------------------------------------
   {
     const resp: GraphSimulationResponse = {
@@ -772,6 +786,12 @@ export async function runWasmDevDiagnostic(): Promise<void> {
         reachable_asset_ids: ["asset-01", "asset-02"],
         unreachable_asset_ids: [],
         witnesses: [
+          {
+            target_asset: "asset-01",
+            source_asset: "asset-01",
+            asset_path: ["asset-01"],
+            edge_path: [],
+          },
           {
             target_asset: "asset-02",
             source_asset: "asset-01",
@@ -804,7 +824,11 @@ export async function runWasmDevDiagnostic(): Promise<void> {
         "NEGATIVE Test 18 (disabled edge in witness): FAIL — validateGraphResponse should have rejected disabled edge",
       );
     } catch (error) {
-      if (error instanceof EngineResponseError) {
+      if (
+        error instanceof EngineResponseError &&
+        error.code === "INVALID_RESPONSE_SHAPE" &&
+        error.message === "edge 'net-01' in witness path is not enabled"
+      ) {
         styledLog(
           "info",
           `NEGATIVE Test 18 (disabled edge in witness): PASS — code="${error.code}" message="${error.message}"`,
@@ -812,7 +836,7 @@ export async function runWasmDevDiagnostic(): Promise<void> {
       } else {
         styledLog(
           "error",
-          `NEGATIVE Test 18 (disabled edge in witness): FAIL — expected EngineResponseError, got ${error instanceof Error ? error.constructor.name : typeof error}: ${error instanceof Error ? error.message : String(error)}`,
+          `NEGATIVE Test 18 (disabled edge in witness): FAIL — expected EngineResponseError code=INVALID_RESPONSE_SHAPE message="edge 'net-01' in witness path is not enabled", got ${error instanceof Error ? error.constructor.name : typeof error}${(error as any).code ? ` code="${(error as any).code}"` : ""}: ${error instanceof Error ? error.message : String(error)}`,
         );
       }
     }
@@ -866,7 +890,11 @@ export async function runWasmDevDiagnostic(): Promise<void> {
         "NEGATIVE Test 19 (witness source not in attack sources): FAIL — validateGraphResponse should have rejected witness with source not in attack sources",
       );
     } catch (error) {
-      if (error instanceof EngineResponseError) {
+      if (
+        error instanceof EngineResponseError &&
+        error.code === "INVALID_RESPONSE_SHAPE" &&
+        error.message === "witness source 'asset-01' is not in attack_source_asset_ids"
+      ) {
         styledLog(
           "info",
           `NEGATIVE Test 19 (witness source not in attack sources): PASS — code="${error.code}" message="${error.message}"`,
@@ -874,7 +902,7 @@ export async function runWasmDevDiagnostic(): Promise<void> {
       } else {
         styledLog(
           "error",
-          `NEGATIVE Test 19 (witness source not in attack sources): FAIL — expected EngineResponseError, got ${error instanceof Error ? error.constructor.name : typeof error}: ${error instanceof Error ? error.message : String(error)}`,
+          `NEGATIVE Test 19 (witness source not in attack sources): FAIL — expected EngineResponseError code=INVALID_RESPONSE_SHAPE message="witness source 'asset-01' is not in attack_source_asset_ids", got ${error instanceof Error ? error.constructor.name : typeof error}${(error as any).code ? ` code="${(error as any).code}"` : ""}: ${error instanceof Error ? error.message : String(error)}`,
         );
       }
     }
@@ -927,7 +955,11 @@ export async function runWasmDevDiagnostic(): Promise<void> {
         "NEGATIVE Test 20 (missing initially unavailable): FAIL — validateGraphResponse should have rejected missing initially unavailable asset",
       );
     } catch (error) {
-      if (error instanceof EngineResponseError) {
+      if (
+        error instanceof EngineResponseError &&
+        error.code === "INVALID_RESPONSE_SHAPE" &&
+        error.message === "initially_unavailable_asset_ids is missing unavailable asset 'asset-02'"
+      ) {
         styledLog(
           "info",
           `NEGATIVE Test 20 (missing initially unavailable): PASS — code="${error.code}" message="${error.message}"`,
@@ -935,7 +967,7 @@ export async function runWasmDevDiagnostic(): Promise<void> {
       } else {
         styledLog(
           "error",
-          `NEGATIVE Test 20 (missing initially unavailable): FAIL — expected EngineResponseError, got ${error instanceof Error ? error.constructor.name : typeof error}: ${error instanceof Error ? error.message : String(error)}`,
+          `NEGATIVE Test 20 (missing initially unavailable): FAIL — expected EngineResponseError code=INVALID_RESPONSE_SHAPE message="initially_unavailable_asset_ids is missing unavailable asset 'asset-02'", got ${error instanceof Error ? error.constructor.name : typeof error}${(error as any).code ? ` code="${(error as any).code}"` : ""}: ${error instanceof Error ? error.message : String(error)}`,
         );
       }
     }
@@ -985,7 +1017,11 @@ export async function runWasmDevDiagnostic(): Promise<void> {
         "NEGATIVE Test 21 (unknown reachable ID): FAIL — validateGraphResponse should have rejected unknown ID in reachable_asset_ids",
       );
     } catch (error) {
-      if (error instanceof EngineResponseError) {
+      if (
+        error instanceof EngineResponseError &&
+        error.code === "INVALID_RESPONSE_SHAPE" &&
+        error.message === "reachable_asset_ids contains unknown asset 'asset-99'"
+      ) {
         styledLog(
           "info",
           `NEGATIVE Test 21 (unknown reachable ID): PASS — code="${error.code}" message="${error.message}"`,
@@ -993,7 +1029,7 @@ export async function runWasmDevDiagnostic(): Promise<void> {
       } else {
         styledLog(
           "error",
-          `NEGATIVE Test 21 (unknown reachable ID): FAIL — expected EngineResponseError, got ${error instanceof Error ? error.constructor.name : typeof error}: ${error instanceof Error ? error.message : String(error)}`,
+          `NEGATIVE Test 21 (unknown reachable ID): FAIL — expected EngineResponseError code=INVALID_RESPONSE_SHAPE message="reachable_asset_ids contains unknown asset 'asset-99'", got ${error instanceof Error ? error.constructor.name : typeof error}${(error as any).code ? ` code="${(error as any).code}"` : ""}: ${error instanceof Error ? error.message : String(error)}`,
         );
       }
     }
@@ -1043,7 +1079,11 @@ export async function runWasmDevDiagnostic(): Promise<void> {
         "NEGATIVE Test 22 (unknown unreachable ID): FAIL — validateGraphResponse should have rejected unknown ID in unreachable_asset_ids",
       );
     } catch (error) {
-      if (error instanceof EngineResponseError) {
+      if (
+        error instanceof EngineResponseError &&
+        error.code === "INVALID_RESPONSE_SHAPE" &&
+        error.message === "unreachable_asset_ids contains unknown asset 'asset-99'"
+      ) {
         styledLog(
           "info",
           `NEGATIVE Test 22 (unknown unreachable ID): PASS — code="${error.code}" message="${error.message}"`,
@@ -1051,7 +1091,7 @@ export async function runWasmDevDiagnostic(): Promise<void> {
       } else {
         styledLog(
           "error",
-          `NEGATIVE Test 22 (unknown unreachable ID): FAIL — expected EngineResponseError, got ${error instanceof Error ? error.constructor.name : typeof error}: ${error instanceof Error ? error.message : String(error)}`,
+          `NEGATIVE Test 22 (unknown unreachable ID): FAIL — expected EngineResponseError code=INVALID_RESPONSE_SHAPE message="unreachable_asset_ids contains unknown asset 'asset-99'", got ${error instanceof Error ? error.constructor.name : typeof error}${(error as any).code ? ` code="${(error as any).code}"` : ""}: ${error instanceof Error ? error.message : String(error)}`,
         );
       }
     }
